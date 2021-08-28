@@ -167,7 +167,7 @@ class ModuleInterface:
 
         return track_info
 
-    def get_lyrics_info(self, track_id: str) -> LyricsInfo:
+    def get_track_lyrics(self, track_id: str) -> LyricsInfo:
         embedded, synced = None, None
 
         lyrics_data = self.session.get_lyrics(track_id)
