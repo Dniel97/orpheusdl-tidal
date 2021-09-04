@@ -11,7 +11,7 @@ from .tidal_api import TidalTvSession, TidalApi, TidalAuthError
 
 module_information = ModuleInformation(
     service_name='Tidal',
-    module_supported_modes=ModuleModes.download | ModuleModes.credits | ModuleModes.lyrics | ModuleModes.covers,
+    module_supported_modes=ModuleModes.download | ModuleModes.credits | ModuleModes.lyrics,
     flags=ModuleFlags.custom_url_parsing,
     global_settings={'client_token': 'aR7gUaTK1ihpXOEP', 'client_secret': 'eVWBEkuL2FCjxgjOkR3yK0RYZEbcrMXRc2l8fU3ZCdE='},
     temporary_settings=['session'],

@@ -76,6 +76,10 @@ loaded module. You'll find the configuration file here: `config/settings.json`
         "download_path": "./downloads/",
         "download_quality": "lossless"
     },
+    "codecs": {
+        "proprietary_codecs": false,
+        "spatial_codecs": true
+    },
 ```
 
 `download_quality`: Choose one of the following settings:
@@ -83,6 +87,10 @@ loaded module. You'll find the configuration file here: `config/settings.json`
 * "lossless": FLAC with 44.1/16
 * "high": AAC 320 kbit/s
 * "low": AAC 96 kbit/s
+
+`proprietary_codecs`: Enables/Disables MQA (Tidal Masters) downloading regardless the "hifi" setting from `download_quality`
+
+`spatial_codecs`: Enables/Disables downloading of Dolby Atmos (EAC-3, AC-4) and Sony 360RA
 
 ### Tidal
 ```json
