@@ -113,8 +113,8 @@ class ModuleInterface:
             else:
                 raise Exception('Query type is invalid')
 
-            additional = ''
-            if query_type != DownloadTypeEnum.artist:
+            additional = None
+            if query_type is not DownloadTypeEnum.artist:
                 if i['audioModes'] == ['DOLBY_ATMOS']:
                     additional = "Dolby Atmos"
                 elif i['audioModes'] == ['SONY_360RA']:
@@ -127,9 +127,10 @@ class ModuleInterface:
             item = SearchResult(
                 name=name,
                 artists=artists,
+                year=i['releaseDate'][:4],
                 result_id=str(i['id']),
                 explicit=bool(i['explicit']) if 'explicit' in i else None,
-                additional=[additional]
+                additional=[additional] if additional else None
             )
 
             items.append(item)
@@ -238,6 +239,8 @@ class ModuleInterface:
 
         album_info = AlbumInfo(
             album_name=album_data['title'],
+            album_year=album_data['releaseDate'][:4],
+            explicit=album_data['explicit'],
             artist_name=album_data['artist']['name'],
             artist_id=album_data['artist']['id'],
             tracks=tracks,
