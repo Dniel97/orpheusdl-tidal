@@ -19,7 +19,7 @@ module_information = ModuleInformation(
     test_url='https://tidal.com/browse/track/92265335'
 )
 
-# 5 = 320 kbps MP3, 6 = 16-bit FLAC, 7 = 24-bit / =< 96kHz FLAC, 27 =< 192 kHz FLAC
+# LOW = 96kbit/s AAC, HIGH = 320kbit/s AAC, LOSSLESS = 44.1/16 FLAC, HI_RES <= 48/24 FLAC with MQA
 QUALITY_PARSER = {
     QualityEnum.LOW: 'LOW',
     QualityEnum.MEDIUM: 'HIGH',
@@ -146,7 +146,22 @@ class ModuleInterface:
 
         stream_data = self.session.get_stream_url(track_id,
                                                   QUALITY_PARSER[self.module_controller.orpheus_options.quality_tier])
+
         manifest = json.loads(base64.b64decode(stream_data['manifest']))
+        track_codec = CodecEnum['AAC' if 'mp4a' in manifest['codecs'] else manifest['codecs'].upper()]
+
+        # Cache codec options from orpheus settings
+        codec_options = self.module_controller.orpheus_options.codec_options
+
+        if not codec_data[track_codec].spatial:
+            if not codec_options.proprietary_codecs and codec_data[track_codec].proprietary:
+                # TODO: use indents from music_downloader.py
+                print(f'\t\tProprietary codecs are disabled, if you want to download {track_codec.name}, '
+                      f'set "proprietary_codecs": true')
+                stream_data = self.session.get_stream_url(track_id, 'LOSSLESS')
+
+                manifest = json.loads(base64.b64decode(stream_data['manifest']))
+                track_codec = CodecEnum['AAC' if 'mp4a' in manifest['codecs'] else manifest['codecs'].upper()]
 
         track_info = TrackInfo(
             track_name=track_data['title'],
@@ -162,8 +177,11 @@ class ModuleInterface:
             cover_url=cover_url,
             file_url=manifest['urls'][0],
             tags=self.convert_tags(track_data, album_data),
-            codec=CodecEnum['AAC' if 'mp4a' in manifest['codecs'] else manifest['codecs'].upper()]
+            codec=track_codec
         )
+
+        if not codec_options.spatial_codecs and codec_data[track_codec].spatial:
+            track_info.error = 'Spatial codecs are disabled, if you want to download it, set "spatial_codecs": true'
 
         return track_info
 
