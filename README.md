@@ -42,13 +42,13 @@ Follow these steps to get a local copy of Orpheus up and running:
 
 ### Installation
 
-1. Clone the repo inside the folder `OrpheusDL`
+1. Clone the repo inside the folder `orpheusdl/modules/`
    ```sh
-   git clone https://github.com/Dniel97/orpheusdl-tidal.git
+   git clone https://github.com/Dniel97/orpheusdl-tidal.git tidal
    ```
 2. Execute:
    ```sh
-   python orpheus.py search tidal track darkside
+   python orpheus.py
    ```
 3. Now the `config/settings.json` file should be updated with the Tidal settings
 

@@ -101,15 +101,20 @@ class ModuleInterface:
             if query_type is DownloadTypeEnum.artist:
                 name = i['name']
                 artists = None
+                year = None
             elif query_type is DownloadTypeEnum.playlist:
                 name = i['title']
                 artists = [i['creator']['name']]
+                year = ""
             elif query_type is DownloadTypeEnum.track:
                 name = i['title']
                 artists = [j['name'] for j in i['artists']]
+                # Getting the year from the album?
+                year = i['album']['releaseDate'][:4]
             elif query_type is DownloadTypeEnum.album:
                 name = i['title']
                 artists = [j['name'] for j in i['artists']]
+                year = i['releaseDate'][:4]
             else:
                 raise Exception('Query type is invalid')
 
@@ -127,7 +132,7 @@ class ModuleInterface:
             item = SearchResult(
                 name=name,
                 artists=artists,
-                year=i['releaseDate'][:4],
+                year=year,
                 result_id=str(i['id']),
                 explicit=bool(i['explicit']) if 'explicit' in i else None,
                 additional=[additional] if additional else None
