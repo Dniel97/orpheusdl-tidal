@@ -2,19 +2,24 @@ import base64
 import json
 import logging
 import re
+from getpass import getpass
 
 from urllib.parse import urlparse
 
 from utils.models import *
 from utils.utils import sanitise_name
-from .tidal_api import TidalTvSession, TidalApi, TidalAuthError
+from .tidal_api import TidalTvSession, TidalApi, TidalAuthError, SessionStorage, TidalMobileSession
 
 module_information = ModuleInformation(
     service_name='Tidal',
     module_supported_modes=ModuleModes.download | ModuleModes.credits | ModuleModes.lyrics,
     flags=ModuleFlags.custom_url_parsing,
-    global_settings={'client_token': 'aR7gUaTK1ihpXOEP', 'client_secret': 'eVWBEkuL2FCjxgjOkR3yK0RYZEbcrMXRc2l8fU3ZCdE='},
-    temporary_settings=['session'],
+    global_settings={
+        'tv_token': 'aR7gUaTK1ihpXOEP',
+        'tv_secret': 'eVWBEkuL2FCjxgjOkR3yK0RYZEbcrMXRc2l8fU3ZCdE=',
+        'mobile_token': 'dN2N95wCyEBTllu4'
+    },
+    temporary_settings=['tv', 'mobile'],
     netlocation_constant='tidal',
     test_url='https://tidal.com/browse/track/92265335'
 )
@@ -34,40 +39,68 @@ class ModuleInterface:
         self.module_controller = module_controller
         settings = module_controller.module_settings
 
-        session: TidalTvSession = module_controller.temporary_settings_controller.read('session')
+        sessions = {}
 
-        if not session:
-            logging.debug('Tidal: No session found, creating new one')
-            session = TidalTvSession(settings['client_token'], settings['client_secret'])
+        for session_type in ['tv', 'mobile']:
+            storage: SessionStorage = module_controller.temporary_settings_controller.read(session_type)
 
-            module_controller.temporary_settings_controller.set('session', session)
+            if session_type == 'tv':
+                sessions[session_type] = TidalTvSession(settings['tv_token'], settings['tv_secret'])
+            else:
+                sessions[session_type] = TidalMobileSession(settings['mobile_token'])
 
-        # Always try to refresh session
-        if not session.valid():
-            session.refresh()
-            # Save the refreshed session in the temporary settings
-            module_controller.temporary_settings_controller.set('session', session)
+            if storage:
+                logging.debug(f'Tidal: {session_type} session found, loading')
 
-        while True:
-            # Check for HiFi subscription
-            try:
-                session.check_subscription()
-                break
-            except TidalAuthError as e:
-                print(f'{e}')
-                confirm = input('Do you want to create a new session? [Y/n]: ')
+                sessions[session_type].set_storage(storage)
+            else:
+                logging.debug(f'Tidal: No {session_type} session found, creating new one')
+                if session_type == 'tv':
+                    sessions[session_type].auth()
+                else:
+                    print('Tidal: Enter your Tidal username and password:')
+                    username = input('Username: ')
+                    password = getpass('Password: ')
+                    sessions[session_type].auth(username, password)
+                    print('Successfully logged in!')
 
-                if confirm.upper() == 'N':
-                    print('Exiting...')
-                    exit()
+                module_controller.temporary_settings_controller.set(session_type, sessions[session_type].get_storage())
 
-                # Create a new session finally
-                session = TidalTvSession(settings['client_token'], settings['client_secret'])
-                module_controller.temporary_settings_controller.set('session', session)
+            # Always try to refresh session
+            if not sessions[session_type].valid():
+                sessions[session_type].refresh()
+                # Save the refreshed session in the temporary settings
+                module_controller.temporary_settings_controller.set('session', sessions[session_type])
 
-        self.session = TidalApi(session)
+            while True:
+                # Check for HiFi subscription
+                try:
+                    sessions[session_type].check_subscription()
+                    break
+                except TidalAuthError as e:
+                    print(f'{e}')
+                    confirm = input('Do you want to create a new session? [Y/n]: ')
+
+                    if confirm.upper() == 'N':
+                        print('Exiting...')
+                        exit()
+
+                    # Create a new session finally
+                    if session_type == 'tv':
+                        sessions[session_type].auth()
+                    else:
+                        print('Tidal: Enter your Tidal username and password:')
+                        username = input('Username: ')
+                        password = getpass('Password: ')
+                        sessions[session_type].auth(username, password)
+                    module_controller.temporary_settings_controller.set(session_type, sessions[session_type].get_storage())
+
+        self.session = TidalApi(sessions)
         # Track cache for credits
         self.track_cache = {}
+
+        # Album cache
+        self.album_cache = {}
 
     @staticmethod
     def generate_artwork_url(album_id, size=1280):
@@ -146,7 +179,18 @@ class ModuleInterface:
         track_data = self.session.get_track(track_id)
 
         album_id = str(track_data['album']['id'])
-        album_data = self.session.get_album(album_id)
+
+        # Check if album is already in album cache, add it
+        if album_id in self.album_cache:
+            album_data = self.album_cache[album_id]
+        else:
+            album_data = self.session.get_album(album_id)
+
+        # Get Sony 360RA
+        if track_data['audioModes'] == ['SONY_360RA']:
+            self.session.default = 'mobile'
+        else:
+            self.session.default = 'tv'
 
         cover_url = self.generate_artwork_url(track_data['album']['cover'])
 
@@ -233,7 +277,12 @@ class ModuleInterface:
         return playlist_info
 
     def get_album_info(self, album_id):
-        album_data = self.session.get_album(album_id)
+        # Check if album is already in album cache, add it
+        if album_id in self.album_cache:
+            album_data = self.album_cache[album_id]
+        else:
+            album_data = self.session.get_album(album_id)
+
         # Get all album tracks with corresponding credits
         tracks_data = self.session.get_album_contributors(album_id)
 
