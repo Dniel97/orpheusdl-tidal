@@ -103,8 +103,12 @@ class ModuleInterface:
         self.album_cache = {}
 
     @staticmethod
-    def generate_artwork_url(album_id, size=1280):
-        return 'https://resources.tidal.com/images/{0}/{1}x{1}.jpg'.format(album_id.replace('-', '/'), size)
+    def generate_artwork_url(cover_id, size=1280):
+        return 'https://resources.tidal.com/images/{0}/{1}x{1}.jpg'.format(cover_id.replace('-', '/'), size)
+
+    @staticmethod
+    def generate_animated_artwork_url(cover_id, size=1280):
+        return 'https://resources.tidal.com/videos/{0}/{1}x{1}.mp4'.format(cover_id.replace('-', '/'), size)
 
     @staticmethod
     def custom_url_parse(link: str):
@@ -186,13 +190,11 @@ class ModuleInterface:
         else:
             album_data = self.session.get_album(album_id)
 
-        # Get Sony 360RA
+        # Get Sony 360RA and switch to mobile session
         if track_data['audioModes'] == ['SONY_360RA']:
             self.session.default = 'mobile'
         else:
             self.session.default = 'tv'
-
-        cover_url = self.generate_artwork_url(track_data['album']['cover'])
 
         stream_data = self.session.get_stream_url(track_id,
                                                   QUALITY_PARSER[self.module_controller.orpheus_options.quality_tier])
@@ -213,8 +215,11 @@ class ModuleInterface:
                 manifest = json.loads(base64.b64decode(stream_data['manifest']))
                 track_codec = CodecEnum['AAC' if 'mp4a' in manifest['codecs'] else manifest['codecs'].upper()]
 
+        track_name = track_data["title"]
+        track_name += f' ({track_data["version"]})' if track_data['version'] else ''
+
         track_info = TrackInfo(
-            track_name=track_data['title'],
+            track_name=track_name,
             # track_id=track_id,
             album_id=album_id,
             album_name=album_data['title'],
@@ -224,7 +229,7 @@ class ModuleInterface:
             bit_depth=24 if manifest['codecs'] == 'mqa' else 16,
             sample_rate=44.1,
             download_type=DownloadEnum.URL,
-            cover_url=cover_url,
+            cover_url=self.generate_artwork_url(track_data['album']['cover']),
             file_url=manifest['urls'][0],
             tags=self.convert_tags(track_data, album_data),
             codec=track_codec
@@ -264,14 +269,12 @@ class ModuleInterface:
         else:
             creator_name = 'Unknown'
 
-        cover_url = self.generate_artwork_url(playlist_data['squareImage'], size=1080)
-
         playlist_info = PlaylistInfo(
             playlist_name=playlist_data['title'],
             playlist_creator_name=creator_name,
             playlist_creator_id=playlist_data['creator']['id'],
             tracks=tracks,
-            cover_url=cover_url
+            cover_url=self.generate_artwork_url(playlist_data['squareImage'], size=1080)
         )
 
         return playlist_info
@@ -295,6 +298,8 @@ class ModuleInterface:
             album_name=album_data['title'],
             album_year=album_data['releaseDate'][:4],
             explicit=album_data['explicit'],
+            cover_url=self.generate_artwork_url(album_data['cover']),
+            animated_cover_url=self.generate_animated_artwork_url(album_data['videoCover']),
             artist_name=album_data['artist']['name'],
             artist_id=album_data['artist']['id'],
             tracks=tracks,
@@ -346,8 +351,11 @@ class ModuleInterface:
     def convert_tags(track_data: dict, album_data: dict) -> Tags:
         release_year = track_data['streamStartDate'][:4]
 
+        track_name = track_data["title"]
+        track_name += f' ({track_data["version"]})' if track_data['version'] else ''
+
         tags = Tags(
-            title=track_data['title'],
+            title=track_name,
             album=album_data['title'],
             album_artist=album_data['artist']['name'],
             artist=track_data['artist']['name'],
