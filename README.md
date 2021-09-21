@@ -72,14 +72,19 @@ loaded module. You'll find the configuration file here: `config/settings.json`
 ```json
 "global": {
     "general": {
-        "album_search_return_only_albums": false,
-        "download_path": "./downloads/",
+        ...
         "download_quality": "lossless"
+    },
+    "formatting": {
+        "album_format": "{album_name}{quality}{explicit}",
+        ...
     },
     "codecs": {
         "proprietary_codecs": false,
         "spatial_codecs": true
     },
+    ...
+}
 ```
 
 `download_quality`: Choose one of the following settings:
@@ -87,6 +92,20 @@ loaded module. You'll find the configuration file here: `config/settings.json`
 * "lossless": FLAC with 44.1/16
 * "high": AAC 320 kbit/s
 * "low": AAC 96 kbit/s
+
+`album_format`:
+* `{quality}` will add
+    ```
+     [Dolby Atmos]
+     [360]
+     [M]
+    ```
+  depending on the album quality
+* `{explicit}` will add
+    ```
+     [E]
+    ```
+  to the album path 
 
 `proprietary_codecs`: Enables/Disables MQA (Tidal Masters) downloading regardless the "hifi" setting from `download_quality`
 

@@ -70,7 +70,7 @@ class ModuleInterface:
             if not sessions[session_type].valid():
                 sessions[session_type].refresh()
                 # Save the refreshed session in the temporary settings
-                module_controller.temporary_settings_controller.set('session', sessions[session_type])
+                module_controller.temporary_settings_controller.set(session_type, sessions[session_type].get_storage())
 
             while True:
                 # Check for HiFi subscription
@@ -225,9 +225,9 @@ class ModuleInterface:
             album_name=album_data['title'],
             artist_name=track_data['artist']['name'],
             artist_id=track_data['artist']['id'],
-            # TODO: Get correct bit_depth and sample_rate
-            bit_depth=24 if manifest['codecs'] == 'mqa' else 16,
-            sample_rate=44.1,
+            # TODO: Get correct bit_depth and sample_rate for MQA, even possible?
+            bit_depth=24 if track_codec in [CodecEnum.MQA, CodecEnum.EAC3, CodecEnum.MHA1] else 16,
+            sample_rate=48 if track_codec in [CodecEnum.EAC3, CodecEnum.MHA1] else 44.1,
             download_type=DownloadEnum.URL,
             cover_url=self.generate_artwork_url(track_data['album']['cover']),
             file_url=manifest['urls'][0],
@@ -294,12 +294,22 @@ class ModuleInterface:
         # Cache all track (+credits) in track_cache
         self.track_cache.update({str(track['item']['id']): track for track in tracks_data['items']})
 
+        if album_data['audioModes'] == ['DOLBY_ATMOS']:
+            quality = 'Dolby Atmos'
+        elif album_data['audioModes'] == ['SONY_360RA']:
+            quality = '360'
+        elif album_data['audioQuality'] == 'HI_RES':
+            quality = 'M'
+        else:
+            quality = None
+
         album_info = AlbumInfo(
             album_name=album_data['title'],
             album_year=album_data['releaseDate'][:4],
             explicit=album_data['explicit'],
+            quality=quality,
             cover_url=self.generate_artwork_url(album_data['cover']),
-            animated_cover_url=self.generate_animated_artwork_url(album_data['videoCover']),
+            animated_cover_url=self.generate_animated_artwork_url(album_data['videoCover']) if album_data['videoCover'] else None,
             artist_name=album_data['artist']['name'],
             artist_id=album_data['artist']['id'],
             tracks=tracks,
