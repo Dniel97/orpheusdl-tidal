@@ -42,13 +42,13 @@ Follow these steps to get a local copy of Orpheus up and running:
 
 ### Installation
 
-1. Clone the repo inside the folder `OrpheusDL`
+1. Clone the repo inside the folder `orpheusdl/modules/`
    ```sh
-   git clone https://github.com/Dniel97/orpheusdl-tidal.git
+   git clone https://github.com/Dniel97/orpheusdl-tidal.git tidal
    ```
 2. Execute:
    ```sh
-   python orpheus.py search tidal track darkside
+   python orpheus.py
    ```
 3. Now the `config/settings.json` file should be updated with the Tidal settings
 
@@ -72,10 +72,19 @@ loaded module. You'll find the configuration file here: `config/settings.json`
 ```json
 "global": {
     "general": {
-        "album_search_return_only_albums": false,
-        "download_path": "./downloads/",
+        ...
         "download_quality": "lossless"
     },
+    "formatting": {
+        "album_format": "{album_name}{quality}{explicit}",
+        ...
+    },
+    "codecs": {
+        "proprietary_codecs": false,
+        "spatial_codecs": true
+    },
+    ...
+}
 ```
 
 `download_quality`: Choose one of the following settings:
@@ -83,6 +92,24 @@ loaded module. You'll find the configuration file here: `config/settings.json`
 * "lossless": FLAC with 44.1/16
 * "high": AAC 320 kbit/s
 * "low": AAC 96 kbit/s
+
+`album_format`:
+* `{quality}` will add
+    ```
+     [Dolby Atmos]
+     [360]
+     [M]
+    ```
+  depending on the album quality
+* `{explicit}` will add
+    ```
+     [E]
+    ```
+  to the album path 
+
+`proprietary_codecs`: Enables/Disables MQA (Tidal Masters) downloading regardless the "hifi" setting from `download_quality`
+
+`spatial_codecs`: Enables/Disables downloading of Dolby Atmos (EAC-3, AC-4) and Sony 360RA
 
 ### Tidal
 ```json

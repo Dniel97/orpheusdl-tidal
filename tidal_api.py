@@ -1,12 +1,19 @@
 import base64
+import hashlib
 import json
+import secrets
 import sys
 import time
 import webbrowser
-from datetime import datetime, timedelta
+from abc import ABC, abstractmethod
+from dataclasses import dataclass
 
 import requests
 import urllib3
+
+import urllib.parse as urlparse
+from urllib.parse import parse_qs
+from datetime import datetime, timedelta
 
 from utils.utils import create_requests_session
 
@@ -45,37 +52,30 @@ class TidalApi(object):
     TIDAL_VIDEO_BASE = 'https://api.tidalhifi.com/v1/'
     TIDAL_CLIENT_VERSION = '2.26.1'
 
-    def __init__(self, session):
-        self.session = session
+    def __init__(self, sessions: dict):
+        self.sessions = sessions
+        self.default = 'tv'  # Change to tv or mobile depending on AC-4/360RA
+
         self.s = create_requests_session()
 
     def _get(self, url, params=None, refresh=False):
         if params is None:
             params = {}
         urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-        params['countryCode'] = self.session.country_code
+        params['countryCode'] = self.sessions[self.default].country_code
         if 'limit' not in params:
             params['limit'] = '9999'
 
-        # Catch video for different base
-        if url[:5] == 'video':
-            resp = self.s.get(
-                self.TIDAL_VIDEO_BASE + url,
-                headers=self.session.auth_headers(),
-                params=params,
-                verify=False)
-        else:
-            resp = self.s.get(
-                self.TIDAL_API_BASE + url,
-                headers=self.session.auth_headers(),
-                params=params,
-                verify=False)
+        resp = self.s.get(
+            self.TIDAL_API_BASE + url,
+            headers=self.sessions[self.default].auth_headers(),
+            params=params,
+            verify=False)
 
         # if the request 401s or 403s, try refreshing the TV/Mobile session in case that helps
         if not refresh and (resp.status_code == 401 or resp.status_code == 403):
-            if isinstance(self.session, TidalTvSession):
-                self.session.refresh()
-                return self._get(url, params, True)
+            self.sessions[self.default].refresh()
+            return self._get(url, params, True)
 
         resp_json = None
         try:
@@ -276,28 +276,236 @@ class SessionFormats:
         print('')
 
 
-class TidalTvSession:
+@dataclass
+class SessionStorage:
+    access_token: str
+    refresh_token: str
+    expires: datetime
+    user_id: str
+    country_code: str
+
+
+class TidalSession(ABC):
     '''
-    Tidal session object based on the mobile Android oauth flow
+    Tidal session object with all required functions needed
     '''
-
-    def __init__(self, client_token, client_secret):
-        self.TIDAL_AUTH_BASE = 'https://auth.tidal.com/v1/'
-
-        self.username = None
-        self.client_id = client_token
-        self.client_secret = client_secret
-
-        self.device_code = None
-        self.user_code = None
-
+    def __init__(self):
         self.access_token = None
         self.refresh_token = None
         self.expires = None
         self.user_id = None
         self.country_code = None
 
-        self.auth()
+    def set_storage(self, storage: SessionStorage):
+        self.access_token = storage.access_token
+        self.refresh_token = storage.refresh_token
+        self.expires = storage.expires
+        self.user_id = storage.user_id
+        self.country_code = storage.country_code
+
+    def get_storage(self) -> SessionStorage:
+        return SessionStorage(
+            self.access_token,
+            self.refresh_token,
+            self.expires,
+            self.user_id,
+            self.country_code
+        )
+
+    def check_subscription(self):
+        if self.access_token:
+            r = requests.get('https://api.tidal.com/v1/users/' + str(self.user_id) + '/subscription',
+                             headers=self.auth_headers(), verify=False)
+            assert (r.status_code == 200)
+            if r.json()['subscription']['type'] not in ['HIFI', 'PREMIUM_PLUS']:
+                raise TidalAuthError('You need a HiFi subscription!')
+
+    @abstractmethod
+    def auth_headers(self) -> dict:
+        pass
+
+    def valid(self):
+        '''
+        Checks if session is still valid and returns True/False
+        '''
+        if not isinstance(self, TidalSession):
+            if self.access_token is None or datetime.now() > self.expires:
+                return False
+
+        r = requests.get('https://api.tidal.com/v1/sessions', headers=self.auth_headers(), verify=False)
+        return r.status_code == 200
+
+    @abstractmethod
+    def refresh(self):
+        pass
+
+    @staticmethod
+    def session_type() -> str:
+        pass
+
+
+class TidalMobileSession(TidalSession):
+    '''
+    Tidal session object based on the mobile Android oauth flow
+    '''
+
+    def __init__(self, client_token: str):
+        super().__init__()
+        self.TIDAL_LOGIN_BASE = 'https://login.tidal.com/api/'
+        self.TIDAL_AUTH_BASE = 'https://auth.tidal.com/v1/'
+
+        self.client_id = client_token
+        self.redirect_uri = 'https://tidal.com/android/login/auth'
+        self.code_verifier = base64.urlsafe_b64encode(secrets.token_bytes(32)).rstrip(b'=')
+        self.code_challenge = base64.urlsafe_b64encode(hashlib.sha256(self.code_verifier).digest()).rstrip(b'=')
+        self.client_unique_key = secrets.token_hex(16)
+        self.user_agent = 'Mozilla/5.0 (Linux; Android 10; wv) AppleWebKit/537.36''(KHTML, like Gecko)' \
+                          'Version/4.0 Chrome/90.0.4430.91 Mobile Safari/537.36'
+
+    def auth(self, username: str, password: str):
+        s = requests.Session()
+
+        params = {
+            'response_type': 'code',
+            'redirect_uri': self.redirect_uri,
+            'lang': 'en_US',
+            'appMode': 'android',
+            'client_id': self.client_id,
+            'client_unique_key': self.client_unique_key,
+            'code_challenge': self.code_challenge,
+            'code_challenge_method': 'S256',
+            'restrict_signup': True
+        }
+
+        # retrieve csrf token for subsequent request
+        r = s.get('https://login.tidal.com/authorize', params=params, verify=False, headers={
+            'User-Agent': self.user_agent
+        })
+
+        if r.status_code == 400:
+            raise TidalAuthError("Authorization failed! Is the clientid/token up to date?")
+        elif r.status_code == 403:
+            raise TidalAuthError("Tidal BOT Protection, try again later!")
+
+        recaptcha_response = ''
+
+        # enter email, verify email is valid
+        r = s.post(self.TIDAL_LOGIN_BASE + 'email', params=params, json={
+            'email': username,
+            'recaptchaResponse': recaptcha_response
+        }, verify=False, headers={
+            'User-Agent': self.user_agent,
+            'x-csrf-token': s.cookies['_csrf-token']
+        })
+
+        if r.status_code == 401:
+            raise TidalAuthError('Recaptcha check is missing')
+
+        assert (r.status_code == 200)
+        if not r.json()['isValidEmail']:
+            raise TidalAuthError('Invalid email')
+        if r.json()['newUser']:
+            raise TidalAuthError('User does not exist')
+
+        # login with user credentials
+        r = s.post(self.TIDAL_LOGIN_BASE + 'email/user/existing', params=params, json={
+            'email': username,
+            'password': password
+        }, verify=False, headers={
+            'User-Agent': self.user_agent,
+            'x-csrf-token': s.cookies['_csrf-token']
+        })
+
+        assert (r.status_code == 200)
+
+        # retrieve access code
+        r = s.get('https://login.tidal.com/success?lang=en', allow_redirects=False, verify=False, headers={
+            'User-Agent': self.user_agent
+        })
+        if r.status_code == 401:
+            raise TidalAuthError('Incorrect password')
+        assert (r.status_code == 302)
+        url = urlparse.urlparse(r.headers['location'])
+        oauth_code = parse_qs(url.query)['code'][0]
+
+        # exchange access code for oauth token
+        r = requests.post(self.TIDAL_AUTH_BASE + 'oauth2/token', data={
+            'code': oauth_code,
+            'client_id': self.client_id,
+            'grant_type': 'authorization_code',
+            'redirect_uri': self.redirect_uri,
+            'scope': 'r_usr w_usr w_sub',
+            'code_verifier': self.code_verifier,
+            'client_unique_key': self.client_unique_key
+        }, verify=False, headers={
+            'User-Agent': self.user_agent
+        })
+        assert (r.status_code == 200)
+
+        self.access_token = r.json()['access_token']
+        self.refresh_token = r.json()['refresh_token']
+        self.expires = datetime.now() + timedelta(seconds=r.json()['expires_in'])
+
+        r = requests.get('https://api.tidal.com/v1/sessions', headers=self.auth_headers(), verify=False)
+        assert (r.status_code == 200)
+        self.user_id = r.json()['userId']
+        self.country_code = r.json()['countryCode']
+
+        self.check_subscription()
+
+    def refresh(self):
+        assert (self.refresh_token is not None)
+        r = requests.post(self.TIDAL_AUTH_BASE + 'oauth2/token', data={
+            'refresh_token': self.refresh_token,
+            'client_id': self.client_id,
+            'grant_type': 'refresh_token'
+        }, verify=False)
+
+        if r.status_code == 200:
+            print('\tRefreshing token successful')
+            self.access_token = r.json()['access_token']
+            self.expires = datetime.now() + timedelta(seconds=r.json()['expires_in'])
+
+            if 'refresh_token' in r.json():
+                self.refresh_token = r.json()['refresh_token']
+
+        elif r.status_code == 401:
+            print('\tERROR: ' + r.json()['userMessage'])
+
+        return r.status_code == 200
+
+    @staticmethod
+    def session_type():
+        return 'Mobile'
+
+    def auth_headers(self):
+        return {
+            'Host': 'api.tidal.com',
+            'X-Tidal-Token': self.client_id,
+            'Authorization': 'Bearer {}'.format(self.access_token),
+            'Connection': 'Keep-Alive',
+            'Accept-Encoding': 'gzip',
+            'User-Agent': 'TIDAL_ANDROID/1039 okhttp/3.14.9'
+        }
+
+
+class TidalTvSession(TidalSession):
+    '''
+    Tidal session object based on the AndroidTV oauth flow
+    '''
+
+    def __init__(self, client_token: str, client_secret: str):
+        super().__init__()
+        self.TIDAL_AUTH_BASE = 'https://auth.tidal.com/v1/'
+
+        self.client_id = client_token
+        self.client_secret = client_secret
+
+        self.access_token = None
+        self.refresh_token = None
+        self.expires = None
+        self.user_id = None
+        self.country_code = None
 
     def auth(self):
         s = requests.Session()
@@ -308,17 +516,17 @@ class TidalTvSession:
             'scope': 'r_usr w_usr'
         }, verify=False)
 
-        if r.status_code == 400:
+        if r.status_code != 200:
             raise TidalAuthError("Authorization failed! Is the clientid/token up to date?")
-        elif r.status_code == 200:
-            self.device_code = r.json()['deviceCode']
-            self.user_code = r.json()['userCode']
-            print('Opening https://link.tidal.com/{}, log in or sign up to TIDAL.'.format(self.user_code))
-            webbrowser.open('https://link.tidal.com/' + self.user_code, new=2)
+        else:
+            device_code = r.json()['deviceCode']
+            user_code = r.json()['userCode']
+            print('Opening https://link.tidal.com/{}, log in or sign up to TIDAL.'.format(user_code))
+            webbrowser.open('https://link.tidal.com/' + user_code, new=2)
 
         data = {
             'client_id': self.client_id,
-            'device_code': self.device_code,
+            'device_code': device_code,
             'client_secret': self.client_secret,
             'grant_type': 'urn:ietf:params:oauth:grant-type:device_code',
             'scope': 'r_usr w_usr'
@@ -357,21 +565,7 @@ class TidalTvSession:
         r = requests.get('https://api.tidal.com/v1/users/{}?countryCode={}'.format(self.user_id, self.country_code),
                          headers=self.auth_headers(), verify=False)
         assert (r.status_code == 200)
-        self.username = r.json()['username']
-
-    def check_subscription(self):
-        if self.access_token is not None:
-            r = requests.get('https://api.tidal.com/v1/users/' + str(self.user_id) + '/subscription',
-                             headers=self.auth_headers(), verify=False)
-            assert (r.status_code == 200)
-            if r.json()['subscription']['type'] not in ['HIFI', 'PREMIUM_PLUS']:
-                raise TidalAuthError('You need a HiFi subscription!')
-
-    def valid(self):
-        if self.access_token is None or datetime.now() > self.expires:
-            return False
-        r = requests.get('https://api.tidal.com/v1/sessions', headers=self.auth_headers(), verify=False)
-        return r.status_code == 200
+        # self.username = r.json()['username']
 
     def refresh(self):
         assert (self.refresh_token is not None)
@@ -398,7 +592,6 @@ class TidalTvSession:
 
     def auth_headers(self):
         return {
-            'Host': 'api.tidal.com',
             'X-Tidal-Token': self.client_id,
             'Authorization': 'Bearer {}'.format(self.access_token),
             'Connection': 'Keep-Alive',
