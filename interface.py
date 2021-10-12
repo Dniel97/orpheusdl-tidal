@@ -13,13 +13,14 @@ from .tidal_api import TidalTvSession, TidalApi, TidalAuthError, SessionStorage,
 module_information = ModuleInformation(
     service_name='Tidal',
     module_supported_modes=ModuleModes.download | ModuleModes.credits | ModuleModes.lyrics,
-    flags=ModuleFlags.custom_url_parsing,
+    # url_decoding=ManualEnum.manual,
+    login_behaviour=ManualEnum.manual,
     global_settings={
         'tv_token': 'aR7gUaTK1ihpXOEP',
         'tv_secret': 'eVWBEkuL2FCjxgjOkR3yK0RYZEbcrMXRc2l8fU3ZCdE=',
         'mobile_token': 'dN2N95wCyEBTllu4'
     },
-    temporary_settings=['tv', 'mobile'],
+    session_storage_variables=['tv', 'mobile'],
     netlocation_constant='tidal',
     test_url='https://tidal.com/browse/track/92265335'
 )
@@ -96,9 +97,9 @@ class ModuleInterface:
                     module_controller.temporary_settings_controller.set(session_type, sessions[session_type].get_storage())
 
         self.session = TidalApi(sessions)
+
         # Track cache for credits
         self.track_cache = {}
-
         # Album cache
         self.album_cache = {}
 
@@ -110,6 +111,7 @@ class ModuleInterface:
     def generate_animated_artwork_url(cover_id, size=1280):
         return 'https://resources.tidal.com/videos/{0}/{1}x{1}.mp4'.format(cover_id.replace('-', '/'), size)
 
+    '''
     @staticmethod
     def custom_url_parse(link: str):
         if link.startswith('http'):
@@ -128,7 +130,8 @@ class ModuleInterface:
             else:
                 type_ = components[1]
                 id_ = components[2]
-            return DownloadTypeEnum[type_], id_
+            return MediaIdentification(media_type=DownloadTypeEnum[type_], media_id=id_)
+    '''
 
     def search(self, query_type: DownloadTypeEnum, query: str, tags: Tags = None, limit: int = 10):
         results = self.session.get_search_data(query)
@@ -179,7 +182,7 @@ class ModuleInterface:
 
         return items
 
-    def get_track_info(self, track_id: str) -> TrackInfo:
+    def get_track_info(self, track_id: str, quality_tier: QualityEnum, codec_options: CodecOptions) -> TrackInfo:
         track_data = self.session.get_track(track_id)
 
         album_id = str(track_data['album']['id'])
@@ -196,14 +199,10 @@ class ModuleInterface:
         else:
             self.session.default = 'tv'
 
-        stream_data = self.session.get_stream_url(track_id,
-                                                  QUALITY_PARSER[self.module_controller.orpheus_options.quality_tier])
+        stream_data = self.session.get_stream_url(track_id, QUALITY_PARSER[quality_tier])
 
         manifest = json.loads(base64.b64decode(stream_data['manifest']))
         track_codec = CodecEnum['AAC' if 'mp4a' in manifest['codecs'] else manifest['codecs'].upper()]
-
-        # Cache codec options from orpheus settings
-        codec_options = self.module_controller.orpheus_options.codec_options
 
         if not codec_data[track_codec].spatial:
             if not codec_options.proprietary_codecs and codec_data[track_codec].proprietary:
@@ -219,26 +218,29 @@ class ModuleInterface:
         track_name += f' ({track_data["version"]})' if track_data['version'] else ''
 
         track_info = TrackInfo(
-            track_name=track_name,
-            # track_id=track_id,
+            name=track_name,
+            album=album_data['title'],
             album_id=album_id,
-            album_name=album_data['title'],
-            artist_name=track_data['artist']['name'],
+            artists=[track_data['artist']['name']],
             artist_id=track_data['artist']['id'],
+            release_year=track_data['streamStartDate'][:4],
             # TODO: Get correct bit_depth and sample_rate for MQA, even possible?
             bit_depth=24 if track_codec in [CodecEnum.MQA, CodecEnum.EAC3, CodecEnum.MHA1] else 16,
             sample_rate=48 if track_codec in [CodecEnum.EAC3, CodecEnum.MHA1] else 44.1,
-            download_type=DownloadEnum.URL,
             cover_url=self.generate_artwork_url(track_data['album']['cover']),
-            file_url=manifest['urls'][0],
             tags=self.convert_tags(track_data, album_data),
-            codec=track_codec
+            codec=track_codec,
+            download_extra_kwargs={'file_url': manifest['urls'][0]}
         )
 
         if not codec_options.spatial_codecs and codec_data[track_codec].spatial:
             track_info.error = 'Spatial codecs are disabled, if you want to download it, set "spatial_codecs": true'
 
         return track_info
+
+    @staticmethod
+    def get_track_download(file_url: str) -> TrackDownloadInfo:
+        return TrackDownloadInfo(download_type=DownloadEnum.URL, file_url=file_url)
 
     def get_track_lyrics(self, track_id: str) -> LyricsInfo:
         embedded, synced = None, None
@@ -270,10 +272,12 @@ class ModuleInterface:
             creator_name = 'Unknown'
 
         playlist_info = PlaylistInfo(
-            playlist_name=playlist_data['title'],
-            playlist_creator_name=creator_name,
-            playlist_creator_id=playlist_data['creator']['id'],
+            name=playlist_data['title'],
+            creator=creator_name,
             tracks=tracks,
+            # TODO: Use playlist creation date or lastUpdated?
+            release_year=playlist_data['created'][:4],
+            creator_id=playlist_data['creator']['id'],
             cover_url=self.generate_artwork_url(playlist_data['squareImage'], size=1080)
         )
 
@@ -304,13 +308,13 @@ class ModuleInterface:
             quality = None
 
         album_info = AlbumInfo(
-            album_name=album_data['title'],
-            album_year=album_data['releaseDate'][:4],
+            name=album_data['title'],
+            release_year=album_data['releaseDate'][:4],
             explicit=album_data['explicit'],
             quality=quality,
             cover_url=self.generate_artwork_url(album_data['cover']),
             animated_cover_url=self.generate_animated_artwork_url(album_data['videoCover']) if album_data['videoCover'] else None,
-            artist_name=album_data['artist']['name'],
+            artist=album_data['artist']['name'],
             artist_id=album_data['artist']['id'],
             tracks=tracks,
         )
@@ -326,7 +330,7 @@ class ModuleInterface:
         albums = [str(album['id']) for album in artist_albums + artist_singles]
 
         artist_info = ArtistInfo(
-            artist_name=artist_data['name'],
+            name=artist_data['name'],
             albums=albums
         )
 
@@ -365,16 +369,11 @@ class ModuleInterface:
         track_name += f' ({track_data["version"]})' if track_data['version'] else ''
 
         tags = Tags(
-            title=track_name,
-            album=album_data['title'],
             album_artist=album_data['artist']['name'],
-            artist=track_data['artist']['name'],
             track_number=track_data['trackNumber'],
             total_tracks=album_data['numberOfTracks'],
             disc_number=track_data['volumeNumber'],
             total_discs=album_data['numberOfVolumes'],
-            date=release_year,
-            explicit=track_data['explicit'],
             isrc=track_data['isrc'],
             copyright=track_data['copyright'],
             replay_gain=track_data['replayGain'],
