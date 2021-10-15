@@ -96,7 +96,7 @@ class ModuleInterface:
                         sessions[session_type].auth(username, password)
                     module_controller.temporary_settings_controller.set(session_type, sessions[session_type].get_storage())
 
-        self.session = TidalApi(sessions)
+        self.session: TidalApi = TidalApi(sessions)
 
         # Track cache for credits
         self.track_cache = {}
@@ -133,8 +133,8 @@ class ModuleInterface:
             return MediaIdentification(media_type=DownloadTypeEnum[type_], media_id=id_)
     '''
 
-    def search(self, query_type: DownloadTypeEnum, query: str, tags: Tags = None, limit: int = 10):
-        results = self.session.get_search_data(query)
+    def search(self, query_type: DownloadTypeEnum, query: str, track_info: TrackInfo = None, limit: int = 20):
+        results = self.session.get_search_data(query, limit=limit)
 
         items = []
         for i in results[query_type.name + 's']['items']:
@@ -363,8 +363,6 @@ class ModuleInterface:
 
     @staticmethod
     def convert_tags(track_data: dict, album_data: dict) -> Tags:
-        release_year = track_data['streamStartDate'][:4]
-
         track_name = track_data["title"]
         track_name += f' ({track_data["version"]})' if track_data['version'] else ''
 

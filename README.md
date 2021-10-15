@@ -76,7 +76,7 @@ loaded module. You'll find the configuration file here: `config/settings.json`
         "download_quality": "lossless"
     },
     "formatting": {
-        "album_format": "{album_name}{quality}{explicit}",
+        "album_format": "{artist}/{name}{quality}{explicit}",
         ...
     },
     "codecs": {
@@ -134,5 +134,5 @@ Project Link: [OrpheusDL Tidal Public GitHub Repository](https://github.com/Dnie
 
 <!-- ACKNOWLEDGEMENTS -->
 ## Acknowledgements
-* [RedSea](https://github.com/redsudo/RedSea)
+* [RedSudos's RedSea fork](https://github.com/redsudo/RedSea)
 * [My RedSea fork](https://github.com/Dniel97/RedSea)

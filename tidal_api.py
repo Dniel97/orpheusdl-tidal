@@ -112,9 +112,13 @@ class TidalApi(object):
             'prefetch': 'false'
         })
 
-    def get_search_data(self, searchterm):
-        return self._get('search',
-                         params={'query': str(searchterm), 'offset': 0, 'limit': 20, 'includeContributors': 'true'})
+    def get_search_data(self, search_term, limit=20):
+        return self._get('search', params={
+            'query': str(search_term),
+            'offset': 0,
+            'limit': limit,
+            'includeContributors': 'true'
+        })
 
     def get_page(self, pageurl):
         return self._get('pages/' + pageurl, params={'deviceType': 'TV', 'locale': 'en_US', 'mediaFormats': 'SONY_360'})
