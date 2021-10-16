@@ -1,14 +1,11 @@
 import base64
 import json
 import logging
-import re
 from getpass import getpass
-
-from urllib.parse import urlparse
 
 from utils.models import *
 from utils.utils import sanitise_name
-from .tidal_api import TidalTvSession, TidalApi, TidalAuthError, SessionStorage, TidalMobileSession
+from .tidal_api import TidalTvSession, TidalApi, TidalAuthError, SessionStorage, TidalMobileSession, SessionType
 
 module_information = ModuleInformation(
     service_name='Tidal',
@@ -18,21 +15,13 @@ module_information = ModuleInformation(
     global_settings={
         'tv_token': 'aR7gUaTK1ihpXOEP',
         'tv_secret': 'eVWBEkuL2FCjxgjOkR3yK0RYZEbcrMXRc2l8fU3ZCdE=',
-        'mobile_token': 'dN2N95wCyEBTllu4'
+        'mobile_token': 'dN2N95wCyEBTllu4',
+        'enable_mobile': True
     },
-    session_storage_variables=['tv', 'mobile'],
+    session_storage_variables=[SessionType.TV.name, SessionType.MOBILE.name],
     netlocation_constant='tidal',
     test_url='https://tidal.com/browse/track/92265335'
 )
-
-# LOW = 96kbit/s AAC, HIGH = 320kbit/s AAC, LOSSLESS = 44.1/16 FLAC, HI_RES <= 48/24 FLAC with MQA
-QUALITY_PARSER = {
-    QualityEnum.LOW: 'LOW',
-    QualityEnum.MEDIUM: 'HIGH',
-    QualityEnum.HIGH: 'HIGH',
-    QualityEnum.LOSSLESS: 'LOSSLESS',
-    QualityEnum.HIFI: 'HI_RES'
-}
 
 
 class ModuleInterface:
@@ -40,12 +29,32 @@ class ModuleInterface:
         self.module_controller = module_controller
         settings = module_controller.module_settings
 
-        sessions = {}
+        # LOW = 96kbit/s AAC, HIGH = 320kbit/s AAC, LOSSLESS = 44.1/16 FLAC, HI_RES <= 48/24 FLAC with MQA
+        self.quality_parse = {
+            QualityEnum.LOW: 'LOW',
+            QualityEnum.MEDIUM: 'HIGH',
+            QualityEnum.HIGH: 'HIGH',
+            QualityEnum.LOSSLESS: 'LOSSLESS',
+            QualityEnum.HIFI: 'HI_RES'
+        }
 
-        for session_type in ['tv', 'mobile']:
+        sessions = {}
+        self.available_sessions = [SessionType.TV.name, SessionType.MOBILE.name]
+
+        if settings['enable_mobile']:
+            storage: SessionStorage = module_controller.temporary_settings_controller.read(SessionType.MOBILE.name)
+            if not storage:
+                confirm = input('"allow_mobile" is enabled but no MOBILE session was found. Do you want to create a '
+                                'MOBILE session (used for AC-4/360RA) [Y/n]? ')
+                if confirm.upper() == 'N':
+                    self.available_sessions = [SessionType.TV.name]
+        else:
+            self.available_sessions = [SessionType.TV.name]
+
+        for session_type in self.available_sessions:
             storage: SessionStorage = module_controller.temporary_settings_controller.read(session_type)
 
-            if session_type == 'tv':
+            if session_type == SessionType.TV.name:
                 sessions[session_type] = TidalTvSession(settings['tv_token'], settings['tv_secret'])
             else:
                 sessions[session_type] = TidalMobileSession(settings['mobile_token'])
@@ -56,7 +65,7 @@ class ModuleInterface:
                 sessions[session_type].set_storage(storage)
             else:
                 logging.debug(f'Tidal: No {session_type} session found, creating new one')
-                if session_type == 'tv':
+                if session_type == SessionType.TV.name:
                     sessions[session_type].auth()
                 else:
                     print('Tidal: Enter your Tidal username and password:')
@@ -87,14 +96,16 @@ class ModuleInterface:
                         exit()
 
                     # Create a new session finally
-                    if session_type == 'tv':
+                    if session_type == SessionType.TV.name:
                         sessions[session_type].auth()
                     else:
                         print('Tidal: Enter your Tidal username and password:')
                         username = input('Username: ')
                         password = getpass('Password: ')
                         sessions[session_type].auth(username, password)
-                    module_controller.temporary_settings_controller.set(session_type, sessions[session_type].get_storage())
+
+                    module_controller.temporary_settings_controller.set(session_type,
+                                                                        sessions[session_type].get_storage())
 
         self.session: TidalApi = TidalApi(sessions)
 
@@ -194,12 +205,12 @@ class ModuleInterface:
             album_data = self.session.get_album(album_id)
 
         # Get Sony 360RA and switch to mobile session
-        if track_data['audioModes'] == ['SONY_360RA']:
-            self.session.default = 'mobile'
+        if track_data['audioModes'] == ['SONY_360RA'] and SessionType.MOBILE.name in self.available_sessions:
+            self.session.default = SessionType.MOBILE
         else:
-            self.session.default = 'tv'
+            self.session.default = SessionType.TV
 
-        stream_data = self.session.get_stream_url(track_id, QUALITY_PARSER[quality_tier])
+        stream_data = self.session.get_stream_url(track_id, self.quality_parse[quality_tier])
 
         manifest = json.loads(base64.b64decode(stream_data['manifest']))
         track_codec = CodecEnum['AAC' if 'mp4a' in manifest['codecs'] else manifest['codecs'].upper()]
@@ -313,7 +324,8 @@ class ModuleInterface:
             explicit=album_data['explicit'],
             quality=quality,
             cover_url=self.generate_artwork_url(album_data['cover']),
-            animated_cover_url=self.generate_animated_artwork_url(album_data['videoCover']) if album_data['videoCover'] else None,
+            animated_cover_url=self.generate_animated_artwork_url(album_data['videoCover']) if album_data[
+                'videoCover'] else None,
             artist=album_data['artist']['name'],
             artist_id=album_data['artist']['id'],
             tracks=tracks,
