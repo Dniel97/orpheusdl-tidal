@@ -333,13 +333,33 @@ class ModuleInterface:
 
         return album_info
 
-    def get_artist_info(self, artist_id: str) -> ArtistInfo:
+    def get_artist_info(self, artist_id: str, get_credited_albums: bool) -> ArtistInfo:
         artist_data = self.session.get_artist(artist_id)
 
         artist_albums = self.session.get_artist_albums(artist_id)['items']
         artist_singles = self.session.get_artist_albums_ep_singles(artist_id)['items']
 
-        albums = [str(album['id']) for album in artist_albums + artist_singles]
+        # Only works with a mobile session, annoying, never do this again
+        credit_albums = []
+        if get_credited_albums and SessionType.MOBILE.name in self.available_sessions:
+            self.session.default = SessionType.MOBILE
+            credited_albums_page = self.session.get_page('contributor', params={'artistId': artist_id})
+
+            # This is so retarded
+            page_list = credited_albums_page['rows'][-1]['modules'][0]['pagedList']
+            total_items = page_list['totalNumberOfItems']
+            more_items_link = page_list['dataApiPath'][6:]
+
+            # Now fetch all the found total_items
+            items = []
+            for offset in range(0, total_items // 50 + 1):
+                print(f'Fetching {offset * 50}/{total_items}', end='\r')
+                items += self.session.get_page(more_items_link, params={'limit': 50, 'offset': offset * 50})['items']
+
+            credit_albums = [item['item']['album'] for item in items]
+            self.session.default = SessionType.TV
+
+        albums = [str(album['id']) for album in artist_albums + artist_singles + credit_albums]
 
         artist_info = ArtistInfo(
             name=artist_data['name'],

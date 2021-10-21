@@ -126,8 +126,17 @@ class TidalApi(object):
             'includeContributors': 'true'
         })
 
-    def get_page(self, pageurl):
-        return self._get('pages/' + pageurl, params={'deviceType': 'TV', 'locale': 'en_US', 'mediaFormats': 'SONY_360'})
+    def get_page(self, pageurl, params=None):
+        local_params = {
+            'deviceType': 'TV',
+            'locale': 'en_US',
+            'mediaFormats': 'SONY_360'
+        }
+
+        if params:
+            local_params.update(params)
+
+        return self._get('pages/' + pageurl, params=local_params)
 
     def get_playlist_items(self, playlist_id):
         result = self._get('playlists/' + playlist_id + '/items', {
