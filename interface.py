@@ -26,7 +26,7 @@ module_information = ModuleInformation(
 
 class ModuleInterface:
     def __init__(self, module_controller: ModuleController):
-        self.module_controller = module_controller
+        self.cover_size = module_controller.orpheus_options.default_cover_options.resolution
         settings = module_controller.module_settings
 
         # LOW = 96kbit/s AAC, HIGH = 320kbit/s AAC, LOSSLESS = 44.1/16 FLAC, HI_RES <= 48/24 FLAC with MQA
@@ -114,9 +114,15 @@ class ModuleInterface:
         # Album cache
         self.album_cache = {}
 
-    @staticmethod
-    def generate_artwork_url(cover_id, size=1280):
-        return 'https://resources.tidal.com/images/{0}/{1}x{1}.jpg'.format(cover_id.replace('-', '/'), size)
+    def generate_artwork_url(self, cover_id, max_size=1280):
+        # not the best idea, but it rounds the self.cover_size to the nearest number in supported_sizes, 1281 is needed
+        # for the "uncompressed" cover
+        supported_sizes = [80, 160, 320, 480, 640, 1080, 1280, 1281]
+        best_size = min(supported_sizes, key=lambda x: abs(x - self.cover_size))
+        # only supports 80x80, 160x160, 320x320, 480x480, 640x640, 1080x1080 and 1280x1280 only for non playlists
+        # return "uncompressed" cover if self.cover_resolution > max_size
+        image_name = '{0}x{0}.jpg'.format(best_size) if best_size <= max_size else 'origin.jpg'
+        return f'https://resources.tidal.com/images/{cover_id.replace("-", "/")}/{image_name}'
 
     @staticmethod
     def generate_animated_artwork_url(cover_id, size=1280):
@@ -289,7 +295,7 @@ class ModuleInterface:
             # TODO: Use playlist creation date or lastUpdated?
             release_year=playlist_data['created'][:4],
             creator_id=playlist_data['creator']['id'],
-            cover_url=self.generate_artwork_url(playlist_data['squareImage'], size=1080)
+            cover_url=self.generate_artwork_url(playlist_data['squareImage'], max_size=1080)
         )
 
         return playlist_info
