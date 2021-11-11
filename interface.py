@@ -10,7 +10,6 @@ from .tidal_api import TidalTvSession, TidalApi, TidalAuthError, SessionStorage,
 module_information = ModuleInformation(
     service_name='Tidal',
     module_supported_modes=ModuleModes.download | ModuleModes.credits | ModuleModes.lyrics,
-    # url_decoding=ManualEnum.manual,
     login_behaviour=ManualEnum.manual,
     global_settings={
         'tv_token': 'aR7gUaTK1ihpXOEP',
@@ -44,7 +43,7 @@ class ModuleInterface:
         if settings['enable_mobile']:
             storage: SessionStorage = module_controller.temporary_settings_controller.read(SessionType.MOBILE.name)
             if not storage:
-                confirm = input('"allow_mobile" is enabled but no MOBILE session was found. Do you want to create a '
+                confirm = input('"enable_mobile" is enabled but no MOBILE session was found. Do you want to create a '
                                 'MOBILE session (used for AC-4/360RA) [Y/n]? ')
                 if confirm.upper() == 'N':
                     self.available_sessions = [SessionType.TV.name]
@@ -127,28 +126,6 @@ class ModuleInterface:
     @staticmethod
     def generate_animated_artwork_url(cover_id, size=1280):
         return 'https://resources.tidal.com/videos/{0}/{1}x{1}.mp4'.format(cover_id.replace('-', '/'), size)
-
-    '''
-    @staticmethod
-    def custom_url_parse(link: str):
-        if link.startswith('http'):
-            link = re.sub(r'tidal.com\/.{2}\/store\/', 'tidal.com/', link)
-            link = re.sub(r'tidal.com\/store\/', 'tidal.com/', link)
-            link = re.sub(r'tidal.com\/browse\/', 'tidal.com/', link)
-            url = urlparse(link)
-            components = url.path.split('/')
-
-            if not components or len(components) <= 2:
-                print('Invalid URL: ' + link)
-                exit()
-            if len(components) == 5:
-                type_ = components[3]
-                id_ = components[4]
-            else:
-                type_ = components[1]
-                id_ = components[2]
-            return MediaIdentification(media_type=DownloadTypeEnum[type_], media_id=id_)
-    '''
 
     def search(self, query_type: DownloadTypeEnum, query: str, track_info: TrackInfo = None, limit: int = 20):
         results = self.session.get_search_data(query, limit=limit)
@@ -238,7 +215,7 @@ class ModuleInterface:
             name=track_name,
             album=album_data['title'],
             album_id=album_id,
-            artists=[track_data['artist']['name']],
+            artists=[a['name'] for a in track_data['artists']],
             artist_id=track_data['artist']['id'],
             release_year=track_data['streamStartDate'][:4],
             # TODO: Get correct bit_depth and sample_rate for MQA, even possible?
