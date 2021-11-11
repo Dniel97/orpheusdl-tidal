@@ -76,7 +76,7 @@ loaded module. You'll find the configuration file here: `config/settings.json`
         "download_quality": "lossless"
     },
     "formatting": {
-        "album_format": "{album_name}{quality}{explicit}",
+        "album_format": "{artist}/{name}{quality}{explicit}",
         ...
     },
     "codecs": {
@@ -114,13 +114,20 @@ loaded module. You'll find the configuration file here: `config/settings.json`
 ### Tidal
 ```json
  "tidal": {
-    "client_token": "",
-    "client_secret": "",
+    "tv_token": "aR7gUaTK1ihpXOEP",
+    "tv_secret": "eVWBEkuL2FCjxgjOkR3yK0RYZEbcrMXRc2l8fU3ZCdE=",
+    "mobile_token": "dN2N95wCyEBTllu4",
+    "enable_mobile": true
 }
 ```
-`client_token`: Enter a valid TV client token
+`tv_token`: Enter a valid TV client token
 
-`client_secret`: Enter a valid TV client secret for the `client_token`
+`tv_secret`: Enter a valid TV client secret for the `tv_token`
+
+`mobile_token`: Enter a valid MOBILE client token
+
+`enable_mobile`: Enables a second MOBILE session which needs a `username` and `password` (can be the same "TV" account)
+to archive Sony 360RA and Dolby AC-4 if available
 
 <!-- Contact -->
 ## Contact
@@ -134,5 +141,5 @@ Project Link: [OrpheusDL Tidal Public GitHub Repository](https://github.com/Dnie
 
 <!-- ACKNOWLEDGEMENTS -->
 ## Acknowledgements
-* [RedSea](https://github.com/redsudo/RedSea)
+* [RedSudos's RedSea fork](https://github.com/redsudo/RedSea)
 * [My RedSea fork](https://github.com/Dniel97/RedSea)

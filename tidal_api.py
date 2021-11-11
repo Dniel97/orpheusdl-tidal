@@ -7,6 +7,7 @@ import time
 import webbrowser
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from enum import Enum, auto
 
 import requests
 import urllib3
@@ -47,6 +48,11 @@ class TidalError(Exception):
         super(TidalError, self).__init__(message)
 
 
+class SessionType(Enum):
+    TV = auto()
+    MOBILE = auto()
+
+
 class TidalApi(object):
     TIDAL_API_BASE = 'https://api.tidal.com/v1/'
     TIDAL_VIDEO_BASE = 'https://api.tidalhifi.com/v1/'
@@ -54,7 +60,7 @@ class TidalApi(object):
 
     def __init__(self, sessions: dict):
         self.sessions = sessions
-        self.default = 'tv'  # Change to tv or mobile depending on AC-4/360RA
+        self.default: SessionType = SessionType.TV  # Change to TV or MOBILE depending on AC-4/360RA
 
         self.s = create_requests_session()
 
@@ -62,19 +68,19 @@ class TidalApi(object):
         if params is None:
             params = {}
         urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-        params['countryCode'] = self.sessions[self.default].country_code
+        params['countryCode'] = self.sessions[self.default.name].country_code
         if 'limit' not in params:
             params['limit'] = '9999'
 
         resp = self.s.get(
             self.TIDAL_API_BASE + url,
-            headers=self.sessions[self.default].auth_headers(),
+            headers=self.sessions[self.default.name].auth_headers(),
             params=params,
             verify=False)
 
         # if the request 401s or 403s, try refreshing the TV/Mobile session in case that helps
         if not refresh and (resp.status_code == 401 or resp.status_code == 403):
-            self.sessions[self.default].refresh()
+            self.sessions[self.default.name].refresh()
             return self._get(url, params, True)
 
         resp_json = None
@@ -112,12 +118,25 @@ class TidalApi(object):
             'prefetch': 'false'
         })
 
-    def get_search_data(self, searchterm):
-        return self._get('search',
-                         params={'query': str(searchterm), 'offset': 0, 'limit': 20, 'includeContributors': 'true'})
+    def get_search_data(self, search_term, limit=20):
+        return self._get('search', params={
+            'query': str(search_term),
+            'offset': 0,
+            'limit': limit,
+            'includeContributors': 'true'
+        })
 
-    def get_page(self, pageurl):
-        return self._get('pages/' + pageurl, params={'deviceType': 'TV', 'locale': 'en_US', 'mediaFormats': 'SONY_360'})
+    def get_page(self, pageurl, params=None):
+        local_params = {
+            'deviceType': 'TV',
+            'locale': 'en_US',
+            'mediaFormats': 'SONY_360'
+        }
+
+        if params:
+            local_params.update(params)
+
+        return self._get('pages/' + pageurl, params=local_params)
 
     def get_playlist_items(self, playlist_id):
         result = self._get('playlists/' + playlist_id + '/items', {
