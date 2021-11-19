@@ -335,7 +335,9 @@ class TidalSession(ABC):
         if self.access_token:
             r = requests.get('https://api.tidal.com/v1/users/' + str(self.user_id) + '/subscription',
                              headers=self.auth_headers(), verify=False)
-            assert (r.status_code == 200)
+            if r.status_code != 200:
+                raise TidalAuthError(r.json()['userMessage'])
+
             if r.json()['subscription']['type'] not in ['HIFI', 'PREMIUM_PLUS']:
                 raise TidalAuthError('You need a HiFi subscription!')
 
