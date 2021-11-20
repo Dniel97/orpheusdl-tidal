@@ -8,12 +8,13 @@ from xml.etree import ElementTree
 
 import ffmpeg
 
-from utils.models import *
-from utils.utils import sanitise_name, silentremove, download_to_temp, create_temp_filename
+from orpheusdl.utils.models import *
+from orpheusdl.utils.utils import sanitise_name, silentremove, download_to_temp, create_temp_filename
 from .tidal_api import TidalTvSession, TidalApi, TidalAuthError, SessionStorage, TidalMobileSession, SessionType
 
 module_information = ModuleInformation(
     service_name='Tidal',
+    name='tidal',
     module_supported_modes=ModuleModes.download | ModuleModes.credits | ModuleModes.lyrics,
     login_behaviour=ManualEnum.manual,
     global_settings={
