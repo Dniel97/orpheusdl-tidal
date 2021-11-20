@@ -3,10 +3,12 @@ import json
 import logging
 import re
 from getpass import getpass
+from dataclasses import dataclass
 from shutil import copyfileobj
 from xml.etree import ElementTree
 
 import ffmpeg
+from tqdm import tqdm
 
 from utils.models import *
 from utils.utils import sanitise_name, silentremove, download_to_temp, create_temp_filename
@@ -39,6 +41,8 @@ class AudioTrack:
 class ModuleInterface:
     def __init__(self, module_controller: ModuleController):
         self.cover_size = module_controller.orpheus_options.default_cover_options.resolution
+        self.oprinter = module_controller.printer_controller
+        self.print = module_controller.printer_controller.oprint
         settings = module_controller.module_settings
 
         # LOW = 96kbit/s AAC, HIGH = 320kbit/s AAC, LOSSLESS = 44.1/16 FLAC, HI_RES <= 48/24 FLAC with MQA
@@ -220,9 +224,8 @@ class ModuleInterface:
 
         if not codec_data[track_codec].spatial:
             if not codec_options.proprietary_codecs and codec_data[track_codec].proprietary:
-                # TODO: use indents from music_downloader.py
-                print(f'\t\tProprietary codecs are disabled, if you want to download {track_codec.name}, '
-                      f'set "proprietary_codecs": true')
+                self.print(f'Proprietary codecs are disabled, if you want to download {track_codec.name}, '
+                           f'set "proprietary_codecs": true', drop_level=1)
                 stream_data = self.session.get_stream_url(track_id, 'LOSSLESS')
 
                 if stream_data['manifestMimeType'] == 'application/dash+xml':
@@ -324,15 +327,29 @@ class ModuleInterface:
 
         return tracks
 
-    @staticmethod
-    def get_track_download(file_url: str = None, audio_track: AudioTrack = None) -> TrackDownloadInfo:
+    def get_track_download(self, file_url: str = None, audio_track: AudioTrack = None) -> TrackDownloadInfo:
         # No MPEG-DASH, just a simple file
         if file_url:
             return TrackDownloadInfo(download_type=DownloadEnum.URL, file_url=file_url)
 
         # MPEG-DASH
         # Download all segments and save the locations inside temp_locations
-        temp_locations = [download_to_temp(download_url, extension='mp4') for download_url in audio_track.urls]
+        temp_locations = []
+
+        # Use the total_file size for a better progress bar? Is it even possible to calculate the total size from MPD?
+        try:
+            columns = os.get_terminal_size().columns
+            if os.name == 'nt':
+                bar = tqdm(ncols=(columns - self.oprinter.indent_number),
+                           bar_format=' ' * self.oprinter.indent_number + '{l_bar}{bar}{r_bar}')
+            else:
+                raise OSError
+        except OSError:
+            bar = tqdm(audio_track.urls, bar_format=' ' * self.oprinter.indent_number + '{l_bar}{bar}{r_bar}')
+
+        for download_url in bar:
+            temp_locations.append(download_to_temp(download_url, extension='mp4'))
+
         merged_temp_location = create_temp_filename() + '.mp4'
         output_location = create_temp_filename() + '.' + codec_data[audio_track.codec].container.name
 
