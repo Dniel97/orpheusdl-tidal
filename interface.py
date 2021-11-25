@@ -35,7 +35,7 @@ class AudioTrack:
     codec: str
     sample_rate: int
     bitrate: int
-    urls: list[str]
+    urls: list
 
 
 class ModuleInterface:
@@ -267,7 +267,7 @@ class ModuleInterface:
         return track_info
 
     @staticmethod
-    def parse_mpd(xml: bytes) -> list[AudioTrack]:
+    def parse_mpd(xml: bytes) -> list:
         xml = xml.decode('UTF-8')
         # Removes default namespace definition, don't do that!
         xml = re.sub(r'xmlns="[^"]+"', '', xml, count=1)
@@ -333,24 +333,25 @@ class ModuleInterface:
             return TrackDownloadInfo(download_type=DownloadEnum.URL, file_url=file_url)
 
         # MPEG-DASH
-        # Download all segments and save the locations inside temp_locations
-        temp_locations = []
-
         # Use the total_file size for a better progress bar? Is it even possible to calculate the total size from MPD?
         try:
             columns = os.get_terminal_size().columns
             if os.name == 'nt':
-                bar = tqdm(ncols=(columns - self.oprinter.indent_number),
+                bar = tqdm(audio_track.urls, ncols=(columns - self.oprinter.indent_number),
                            bar_format=' ' * self.oprinter.indent_number + '{l_bar}{bar}{r_bar}')
             else:
                 raise OSError
         except OSError:
             bar = tqdm(audio_track.urls, bar_format=' ' * self.oprinter.indent_number + '{l_bar}{bar}{r_bar}')
 
+        # Download all segments and save the locations inside temp_locations
+        temp_locations = []
         for download_url in bar:
             temp_locations.append(download_to_temp(download_url, extension='mp4'))
 
+        # Concatenated/Merged .mp4 file
         merged_temp_location = create_temp_filename() + '.mp4'
+        # Actual converted .flac file
         output_location = create_temp_filename() + '.' + codec_data[audio_track.codec].container.name
 
         # Download is finished, merge chunks into 1 file
