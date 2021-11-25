@@ -114,8 +114,8 @@ loaded module. You'll find the configuration file here: `config/settings.json`
 ### Tidal
 ```json
  "tidal": {
-    "tv_token": "aR7gUaTK1ihpXOEP",
-    "tv_secret": "eVWBEkuL2FCjxgjOkR3yK0RYZEbcrMXRc2l8fU3ZCdE=",
+    "tv_token": "7m7Ap0JC9j1cOM3n",
+    "tv_secret": "vRAdA108tlvkJpTsGZS8rGZ7xTlbJ0qaZ2K9saEzsgY=",
     "mobile_token": "dN2N95wCyEBTllu4",
     "enable_mobile": true
 }

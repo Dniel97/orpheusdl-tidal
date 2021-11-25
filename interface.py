@@ -1,10 +1,17 @@
 import base64
 import json
 import logging
+import re
 from getpass import getpass
+from dataclasses import dataclass
+from shutil import copyfileobj
+from xml.etree import ElementTree
+
+import ffmpeg
+from tqdm import tqdm
 
 from utils.models import *
-from utils.utils import sanitise_name
+from utils.utils import sanitise_name, silentremove, download_to_temp, create_temp_filename
 from .tidal_api import TidalTvSession, TidalApi, TidalAuthError, SessionStorage, TidalMobileSession, SessionType
 
 module_information = ModuleInformation(
@@ -12,8 +19,8 @@ module_information = ModuleInformation(
     module_supported_modes=ModuleModes.download | ModuleModes.credits | ModuleModes.lyrics,
     login_behaviour=ManualEnum.manual,
     global_settings={
-        'tv_token': 'aR7gUaTK1ihpXOEP',
-        'tv_secret': 'eVWBEkuL2FCjxgjOkR3yK0RYZEbcrMXRc2l8fU3ZCdE=',
+        'tv_token': '7m7Ap0JC9j1cOM3n',
+        'tv_secret': 'vRAdA108tlvkJpTsGZS8rGZ7xTlbJ0qaZ2K9saEzsgY=',
         'mobile_token': 'dN2N95wCyEBTllu4',
         'enable_mobile': True
     },
@@ -23,9 +30,19 @@ module_information = ModuleInformation(
 )
 
 
+@dataclass
+class AudioTrack:
+    codec: str
+    sample_rate: int
+    bitrate: int
+    urls: list
+
+
 class ModuleInterface:
     def __init__(self, module_controller: ModuleController):
         self.cover_size = module_controller.orpheus_options.default_cover_options.resolution
+        self.oprinter = module_controller.printer_controller
+        self.print = module_controller.printer_controller.oprint
         settings = module_controller.module_settings
 
         # LOW = 96kbit/s AAC, HIGH = 320kbit/s AAC, LOSSLESS = 44.1/16 FLAC, HI_RES <= 48/24 FLAC with MQA
@@ -194,22 +211,38 @@ class ModuleInterface:
             self.session.default = SessionType.TV
 
         stream_data = self.session.get_stream_url(track_id, self.quality_parse[quality_tier])
+        # Only needed for MPEG-DASH
+        audio_track = None
 
-        manifest = json.loads(base64.b64decode(stream_data['manifest']))
-        track_codec = CodecEnum['AAC' if 'mp4a' in manifest['codecs'] else manifest['codecs'].upper()]
+        if stream_data['manifestMimeType'] == 'application/dash+xml':
+            manifest = base64.b64decode(stream_data['manifest'])
+            audio_track = self.parse_mpd(manifest)[0]  # Only one AudioTrack?
+            track_codec = audio_track.codec
+        else:
+            manifest = json.loads(base64.b64decode(stream_data['manifest']))
+            track_codec = CodecEnum['AAC' if 'mp4a' in manifest['codecs'] else manifest['codecs'].upper()]
 
         if not codec_data[track_codec].spatial:
             if not codec_options.proprietary_codecs and codec_data[track_codec].proprietary:
-                # TODO: use indents from music_downloader.py
-                print(f'\t\tProprietary codecs are disabled, if you want to download {track_codec.name}, '
-                      f'set "proprietary_codecs": true')
+                self.print(f'Proprietary codecs are disabled, if you want to download {track_codec.name}, '
+                           f'set "proprietary_codecs": true', drop_level=1)
                 stream_data = self.session.get_stream_url(track_id, 'LOSSLESS')
 
-                manifest = json.loads(base64.b64decode(stream_data['manifest']))
-                track_codec = CodecEnum['AAC' if 'mp4a' in manifest['codecs'] else manifest['codecs'].upper()]
+                if stream_data['manifestMimeType'] == 'application/dash+xml':
+                    manifest = base64.b64decode(stream_data['manifest'])
+                    audio_track = self.parse_mpd(manifest)[0]  # Only one AudioTrack?
+                    track_codec = audio_track.codec
+                else:
+                    manifest = json.loads(base64.b64decode(stream_data['manifest']))
+                    track_codec = CodecEnum['AAC' if 'mp4a' in manifest['codecs'] else manifest['codecs'].upper()]
 
         track_name = track_data["title"]
         track_name += f' ({track_data["version"]})' if track_data['version'] else ''
+
+        if audio_track:
+            download_args = {'audio_track': audio_track}
+        else:
+            download_args = {'file_url': manifest['urls'][0]}
 
         track_info = TrackInfo(
             name=track_name,
@@ -222,9 +255,10 @@ class ModuleInterface:
             bit_depth=24 if track_codec in [CodecEnum.MQA, CodecEnum.EAC3, CodecEnum.MHA1] else 16,
             sample_rate=48 if track_codec in [CodecEnum.EAC3, CodecEnum.MHA1] else 44.1,
             cover_url=self.generate_artwork_url(track_data['album']['cover']),
+            explicit=track_data['explicit'] if 'explicit' in track_data else None,
             tags=self.convert_tags(track_data, album_data),
             codec=track_codec,
-            download_extra_kwargs={'file_url': manifest['urls'][0]}
+            download_extra_kwargs=download_args
         )
 
         if not codec_options.spatial_codecs and codec_data[track_codec].spatial:
@@ -233,8 +267,115 @@ class ModuleInterface:
         return track_info
 
     @staticmethod
-    def get_track_download(file_url: str) -> TrackDownloadInfo:
-        return TrackDownloadInfo(download_type=DownloadEnum.URL, file_url=file_url)
+    def parse_mpd(xml: bytes) -> list:
+        xml = xml.decode('UTF-8')
+        # Removes default namespace definition, don't do that!
+        xml = re.sub(r'xmlns="[^"]+"', '', xml, count=1)
+        root = ElementTree.fromstring(xml)
+
+        # List of AudioTracks
+        tracks = []
+
+        for period in root.findall('Period'):
+            for adaptation_set in period.findall('AdaptationSet'):
+                for rep in adaptation_set.findall('Representation'):
+                    # Check if representation is audio
+                    content_type = adaptation_set.get('contentType')
+                    if content_type != 'audio':
+                        raise ValueError('Only supports audio MPDs!')
+
+                    # Codec checks
+                    codec = rep.get('codecs').upper()
+                    if codec.startswith('MP4A'):
+                        codec = 'AAC'
+
+                    # Segment template
+                    seg_template = rep.find('SegmentTemplate')
+                    # Add init file to track_urls
+                    track_urls = [seg_template.get('initialization')]
+                    start_number = int(seg_template.get('startNumber') or 1)
+
+                    # https://dashif-documents.azurewebsites.net/Guidelines-TimingModel/master/Guidelines-TimingModel.html#addressing-explicit
+                    # Also see example 9
+                    seg_timeline = seg_template.find('SegmentTimeline')
+                    if seg_timeline is not None:
+                        seg_time_list = []
+                        cur_time = 0
+
+                        for s in seg_timeline.findall('S'):
+                            # Media segments start time
+                            if s.get('t'):
+                                cur_time = int(s.get('t'))
+
+                            # Segment reference
+                            for i in range((int(s.get('r') or 0) + 1)):
+                                seg_time_list.append(cur_time)
+                                # Add duration to current time
+                                cur_time += int(s.get('d'))
+
+                        # Create list with $Number$ indices
+                        seg_num_list = list(range(start_number, len(seg_time_list) + start_number))
+                        # Replace $Number$ with all the seg_num_list indices
+                        track_urls += [seg_template.get('media').replace('$Number$', str(n)) for n in seg_num_list]
+
+                    tracks.append(AudioTrack(
+                        codec=CodecEnum[codec],
+                        sample_rate=int(rep.get('audioSamplingRate') or 0),
+                        bitrate=int(rep.get('bandwidth') or 0),
+                        urls=track_urls
+                    ))
+
+        return tracks
+
+    def get_track_download(self, file_url: str = None, audio_track: AudioTrack = None) -> TrackDownloadInfo:
+        # No MPEG-DASH, just a simple file
+        if file_url:
+            return TrackDownloadInfo(download_type=DownloadEnum.URL, file_url=file_url)
+
+        # MPEG-DASH
+        # Use the total_file size for a better progress bar? Is it even possible to calculate the total size from MPD?
+        try:
+            columns = os.get_terminal_size().columns
+            if os.name == 'nt':
+                bar = tqdm(audio_track.urls, ncols=(columns - self.oprinter.indent_number),
+                           bar_format=' ' * self.oprinter.indent_number + '{l_bar}{bar}{r_bar}')
+            else:
+                raise OSError
+        except OSError:
+            bar = tqdm(audio_track.urls, bar_format=' ' * self.oprinter.indent_number + '{l_bar}{bar}{r_bar}')
+
+        # Download all segments and save the locations inside temp_locations
+        temp_locations = []
+        for download_url in bar:
+            temp_locations.append(download_to_temp(download_url, extension='mp4'))
+
+        # Concatenated/Merged .mp4 file
+        merged_temp_location = create_temp_filename() + '.mp4'
+        # Actual converted .flac file
+        output_location = create_temp_filename() + '.' + codec_data[audio_track.codec].container.name
+
+        # Download is finished, merge chunks into 1 file
+        with open(merged_temp_location, 'wb') as dest_file:
+            for temp_location in temp_locations:
+                with open(temp_location, 'rb') as segment_file:
+                    copyfileobj(segment_file, dest_file)
+
+        # Convert .mp4 back to .flac
+        try:
+            ffmpeg.input(merged_temp_location, hide_banner=None, y=None).output(output_location, acodec='copy',
+                                                                                loglevel='error').run()
+            # Remove all files
+            silentremove(merged_temp_location)
+            for temp_location in temp_locations:
+                silentremove(temp_location)
+        except Exception:
+            print('FFmpeg is not installed or working! Using fallback, may have errors')
+            output_location = merged_temp_location
+
+        return TrackDownloadInfo(
+            download_type=DownloadEnum.TEMP_FILE_PATH,
+            temp_file_path=output_location
+        )
 
     def get_track_lyrics(self, track_id: str) -> LyricsInfo:
         embedded, synced = None, None
@@ -265,7 +406,7 @@ class ModuleInterface:
         else:
             creator_name = 'Unknown'
 
-        playlist_info = PlaylistInfo(
+        return PlaylistInfo(
             name=playlist_data['title'],
             creator=creator_name,
             tracks=tracks,
@@ -274,8 +415,6 @@ class ModuleInterface:
             creator_id=playlist_data['creator']['id'],
             cover_url=self.generate_artwork_url(playlist_data['squareImage'], max_size=1080)
         )
-
-        return playlist_info
 
     def get_album_info(self, album_id):
         # Check if album is already in album cache, add it
@@ -301,7 +440,7 @@ class ModuleInterface:
         else:
             quality = None
 
-        album_info = AlbumInfo(
+        return AlbumInfo(
             name=album_data['title'],
             release_year=album_data['releaseDate'][:4],
             explicit=album_data['explicit'],
@@ -313,8 +452,6 @@ class ModuleInterface:
             artist_id=album_data['artist']['id'],
             tracks=tracks,
         )
-
-        return album_info
 
     def get_artist_info(self, artist_id: str, get_credited_albums: bool) -> ArtistInfo:
         artist_data = self.session.get_artist(artist_id)
@@ -344,12 +481,10 @@ class ModuleInterface:
 
         albums = [str(album['id']) for album in artist_albums + artist_singles + credit_albums]
 
-        artist_info = ArtistInfo(
+        return ArtistInfo(
             name=artist_data['name'],
             albums=albums
         )
-
-        return artist_info
 
     def get_track_credits(self, track_id: str) -> Optional[list]:
         credits_dict = {}
@@ -381,7 +516,7 @@ class ModuleInterface:
         track_name = track_data["title"]
         track_name += f' ({track_data["version"]})' if track_data['version'] else ''
 
-        tags = Tags(
+        return Tags(
             album_artist=album_data['artist']['name'],
             track_number=track_data['trackNumber'],
             total_tracks=album_data['numberOfTracks'],
@@ -392,5 +527,3 @@ class ModuleInterface:
             replay_gain=track_data['replayGain'],
             replay_peak=track_data['peak']
         )
-
-        return tags
