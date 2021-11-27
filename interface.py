@@ -445,6 +445,7 @@ class ModuleInterface:
             release_year=album_data['releaseDate'][:4],
             explicit=album_data['explicit'],
             quality=quality,
+            upc=album_data['upc'],
             cover_url=self.generate_artwork_url(album_data['cover']),
             animated_cover_url=self.generate_animated_artwork_url(album_data['videoCover']) if album_data[
                 'videoCover'] else None,
@@ -523,6 +524,7 @@ class ModuleInterface:
             disc_number=track_data['volumeNumber'],
             total_discs=album_data['numberOfVolumes'],
             isrc=track_data['isrc'],
+            upc=album_data['upc'],
             release_date=album_data['releaseDate'] if 'releaseDate' in album_data else None,
             copyright=track_data['copyright'],
             replay_gain=track_data['replayGain'],
