@@ -523,6 +523,7 @@ class ModuleInterface:
             disc_number=track_data['volumeNumber'],
             total_discs=album_data['numberOfVolumes'],
             isrc=track_data['isrc'],
+            release_date=album_data['releaseDate'] if 'releaseDate' in album_data else None,
             copyright=track_data['copyright'],
             replay_gain=track_data['replayGain'],
             replay_peak=track_data['peak']
