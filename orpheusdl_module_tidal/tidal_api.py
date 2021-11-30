@@ -16,7 +16,7 @@ import urllib.parse as urlparse
 from urllib.parse import parse_qs
 from datetime import datetime, timedelta
 
-from utils.utils import create_requests_session
+from orpheusdl.utils.utils import create_requests_session
 
 technical_names = {
     'eac3': 'E-AC-3 JOC (Dolby Digital Plus with Dolby Atmos, with 5.1 bed)',
