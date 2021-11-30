@@ -1,0 +1,16 @@
+[tool.poetry]
+name = "orpheusdl_module_tidal"
+version = "0.1.0"
+description = "A Tidal module for the OrpheusDL modular archival music program"
+authors = ["Dniel97"]
+
+[tool.poetry.dependencies]
+python = "^3.7"
+requests = "^2.26.0"
+python-ffmpeg = "^1.0.11"
+
+[tool.poetry.dev-dependencies]
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
