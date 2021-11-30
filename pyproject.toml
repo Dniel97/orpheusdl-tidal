@@ -1,5 +1,5 @@
 [tool.poetry]
-name = "orpheusdl_module_tidal"
+name = "orpheusdl-module-tidal"
 version = "0.1.0"
 description = "A Tidal module for the OrpheusDL modular archival music program"
 authors = ["Dniel97"]
