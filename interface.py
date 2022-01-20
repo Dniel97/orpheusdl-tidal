@@ -12,11 +12,11 @@ from tqdm import tqdm
 
 from utils.models import *
 from utils.utils import sanitise_name, silentremove, download_to_temp, create_temp_filename
-from .tidal_api import TidalTvSession, TidalApi, TidalAuthError, SessionStorage, TidalMobileSession, SessionType
+from .tidal_api import TidalTvSession, TidalApi, SessionStorage, TidalMobileSession, SessionType
 
 module_information = ModuleInformation(
     service_name='Tidal',
-    module_supported_modes=ModuleModes.download | ModuleModes.credits | ModuleModes.lyrics,
+    module_supported_modes=ModuleModes.download | ModuleModes.credits | ModuleModes.covers | ModuleModes.lyrics,
     login_behaviour=ManualEnum.manual,
     global_settings={
         'tv_token': '7m7Ap0JC9j1cOM3n',
@@ -32,17 +32,20 @@ module_information = ModuleInformation(
 
 @dataclass
 class AudioTrack:
-    codec: str
+    codec: CodecEnum
     sample_rate: int
     bitrate: int
     urls: list
 
 
 class ModuleInterface:
+    # noinspection PyTypeChecker
     def __init__(self, module_controller: ModuleController):
         self.cover_size = module_controller.orpheus_options.default_cover_options.resolution
         self.oprinter = module_controller.printer_controller
         self.print = module_controller.printer_controller.oprint
+        self.disable_subscription_check = module_controller.orpheus_options.disable_subscription_check
+
         settings = module_controller.module_settings
 
         # LOW = 96kbit/s AAC, HIGH = 320kbit/s AAC, LOSSLESS = 44.1/16 FLAC, HI_RES <= 48/24 FLAC with MQA
@@ -60,7 +63,7 @@ class ModuleInterface:
         if settings['enable_mobile']:
             storage: SessionStorage = module_controller.temporary_settings_controller.read(SessionType.MOBILE.name)
             if not storage:
-                confirm = input('"enable_mobile" is enabled but no MOBILE session was found. Do you want to create a '
+                confirm = input(' "enable_mobile" is enabled but no MOBILE session was found. Do you want to create a '
                                 'MOBILE session (used for AC-4/360RA) [Y/n]? ')
                 if confirm.upper() == 'N':
                     self.available_sessions = [SessionType.TV.name]
@@ -84,11 +87,11 @@ class ModuleInterface:
                 if session_type == SessionType.TV.name:
                     sessions[session_type].auth()
                 else:
-                    print('Tidal: Enter your Tidal username and password:')
-                    username = input('Username: ')
-                    password = getpass('Password: ')
+                    self.print('Tidal: Enter your Tidal username and password:')
+                    username = input(' Username: ')
+                    password = getpass(' Password: ')
                     sessions[session_type].auth(username, password)
-                    print('Successfully logged in!')
+                    self.print('Successfully logged in!')
 
                 module_controller.temporary_settings_controller.set(session_type, sessions[session_type].get_storage())
 
@@ -99,29 +102,28 @@ class ModuleInterface:
                 module_controller.temporary_settings_controller.set(session_type, sessions[session_type].get_storage())
 
             while True:
-                # Check for HiFi subscription
-                try:
-                    sessions[session_type].check_subscription()
+                # check for a valid subscription
+                subscription = self.check_subscription(sessions[session_type].get_subscription())
+                if subscription:
                     break
-                except TidalAuthError as e:
-                    print(f'{e}')
-                    confirm = input('Do you want to create a new session? [Y/n]: ')
 
-                    if confirm.upper() == 'N':
-                        print('Exiting...')
-                        exit()
+                confirm = input(' Do you want to create a new session? [Y/n]: ')
 
-                    # Create a new session finally
-                    if session_type == SessionType.TV.name:
-                        sessions[session_type].auth()
-                    else:
-                        print('Tidal: Enter your Tidal username and password:')
-                        username = input('Username: ')
-                        password = getpass('Password: ')
-                        sessions[session_type].auth(username, password)
+                if confirm.upper() == 'N':
+                    self.print('Exiting...')
+                    exit()
 
-                    module_controller.temporary_settings_controller.set(session_type,
-                                                                        sessions[session_type].get_storage())
+                # create a new session finally
+                if session_type == SessionType.TV.name:
+                    sessions[session_type].auth()
+                else:
+                    self.print('Tidal: Enter your Tidal username and password:')
+                    username = input('Username: ')
+                    password = getpass('Password: ')
+                    sessions[session_type].auth(username, password)
+
+                module_controller.temporary_settings_controller.set(session_type,
+                                                                    sessions[session_type].get_storage())
 
         self.session: TidalApi = TidalApi(sessions)
 
@@ -130,18 +132,26 @@ class ModuleInterface:
         # Album cache
         self.album_cache = {}
 
-    def generate_artwork_url(self, cover_id, max_size=1280):
+    def check_subscription(self, subscription: str) -> bool:
+        # returns true if "disable_subscription_checks" is enabled or subscription is HIFI Plus
+        if not self.disable_subscription_check and subscription not in {'HIFI', 'PREMIUM_PLUS'}:
+            self.print(f'Tidal: Account is not a HiFi Plus account, detected subscription: {subscription}')
+            return False
+        return True
+
+    @staticmethod
+    def generate_artwork_url(cover_id: str, size: int, max_size: int = 1280):
         # not the best idea, but it rounds the self.cover_size to the nearest number in supported_sizes, 1281 is needed
         # for the "uncompressed" cover
         supported_sizes = [80, 160, 320, 480, 640, 1080, 1280, 1281]
-        best_size = min(supported_sizes, key=lambda x: abs(x - self.cover_size))
+        best_size = min(supported_sizes, key=lambda x: abs(x - size))
         # only supports 80x80, 160x160, 320x320, 480x480, 640x640, 1080x1080 and 1280x1280 only for non playlists
         # return "uncompressed" cover if self.cover_resolution > max_size
         image_name = '{0}x{0}.jpg'.format(best_size) if best_size <= max_size else 'origin.jpg'
         return f'https://resources.tidal.com/images/{cover_id.replace("-", "/")}/{image_name}'
 
     @staticmethod
-    def generate_animated_artwork_url(cover_id, size=1280):
+    def generate_animated_artwork_url(cover_id: str, size=1280):
         return 'https://resources.tidal.com/videos/{0}/{1}x{1}.mp4'.format(cover_id.replace('-', '/'), size)
 
     def search(self, query_type: DownloadTypeEnum, query: str, track_info: TrackInfo = None, limit: int = 20):
@@ -254,11 +264,12 @@ class ModuleInterface:
             # TODO: Get correct bit_depth and sample_rate for MQA, even possible?
             bit_depth=24 if track_codec in [CodecEnum.MQA, CodecEnum.EAC3, CodecEnum.MHA1] else 16,
             sample_rate=48 if track_codec in [CodecEnum.EAC3, CodecEnum.MHA1] else 44.1,
-            cover_url=self.generate_artwork_url(track_data['album']['cover']),
+            cover_url=self.generate_artwork_url(track_data['album']['cover'], size=self.cover_size),
             explicit=track_data['explicit'] if 'explicit' in track_data else None,
             tags=self.convert_tags(track_data, album_data),
             codec=track_codec,
-            download_extra_kwargs=download_args
+            download_extra_kwargs=download_args,
+            lyrics_extra_kwargs={'track_data': track_data}
         )
 
         if not codec_options.spatial_codecs and codec_data[track_codec].spatial:
@@ -328,12 +339,12 @@ class ModuleInterface:
         return tracks
 
     def get_track_download(self, file_url: str = None, audio_track: AudioTrack = None) -> TrackDownloadInfo:
-        # No MPEG-DASH, just a simple file
+        # no MPEG-DASH, just a simple file
         if file_url:
             return TrackDownloadInfo(download_type=DownloadEnum.URL, file_url=file_url)
 
         # MPEG-DASH
-        # Use the total_file size for a better progress bar? Is it even possible to calculate the total size from MPD?
+        # use the total_file size for a better progress bar? Is it even possible to calculate the total size from MPD?
         try:
             columns = os.get_terminal_size().columns
             if os.name == 'nt':
@@ -344,23 +355,23 @@ class ModuleInterface:
         except OSError:
             bar = tqdm(audio_track.urls, bar_format=' ' * self.oprinter.indent_number + '{l_bar}{bar}{r_bar}')
 
-        # Download all segments and save the locations inside temp_locations
+        # download all segments and save the locations inside temp_locations
         temp_locations = []
         for download_url in bar:
             temp_locations.append(download_to_temp(download_url, extension='mp4'))
 
-        # Concatenated/Merged .mp4 file
+        # concatenated/Merged .mp4 file
         merged_temp_location = create_temp_filename() + '.mp4'
-        # Actual converted .flac file
+        # actual converted .flac file
         output_location = create_temp_filename() + '.' + codec_data[audio_track.codec].container.name
 
-        # Download is finished, merge chunks into 1 file
+        # download is finished, merge chunks into 1 file
         with open(merged_temp_location, 'wb') as dest_file:
             for temp_location in temp_locations:
                 with open(temp_location, 'rb') as segment_file:
                     copyfileobj(segment_file, dest_file)
 
-        # Convert .mp4 back to .flac
+        # convert .mp4 back to .flac
         try:
             ffmpeg.input(merged_temp_location, hide_banner=None, y=None).output(output_location, acodec='copy',
                                                                                 loglevel='error').run()
@@ -369,18 +380,52 @@ class ModuleInterface:
             for temp_location in temp_locations:
                 silentremove(temp_location)
         except Exception:
-            print('FFmpeg is not installed or working! Using fallback, may have errors')
-            output_location = merged_temp_location
+            self.print('FFmpeg is not installed or working! Using fallback, may have errors')
 
+            # return the MP4 temp file, but tell orpheus to change the container to .m4a (AAC)
+            return TrackDownloadInfo(
+                download_type=DownloadEnum.TEMP_FILE_PATH,
+                temp_file_path=merged_temp_location,
+                different_codec=CodecEnum.AAC
+            )
+
+        # return the converted flac file now
         return TrackDownloadInfo(
             download_type=DownloadEnum.TEMP_FILE_PATH,
-            temp_file_path=output_location
+            temp_file_path=output_location,
         )
 
-    def get_track_lyrics(self, track_id: str) -> LyricsInfo:
+    def get_track_cover(self, track_id: str, cover_options: CoverOptions, data=None) -> CoverInfo:
+        if data is None:
+            data = {}
+
+        track_data = data[track_id] if track_id in data else self.session.get_track(track_id)
+        cover_id = track_data['album']['cover']
+
+        # Tidal don't support PNG, so it will always get JPG
+        cover_url = self.generate_artwork_url(cover_id, size=cover_options.resolution)
+        return CoverInfo(url=cover_url, file_type=ImageFileTypeEnum.jpg)
+
+    def get_track_lyrics(self, track_id: str, track_data: dict) -> LyricsInfo:
         embedded, synced = None, None
 
         lyrics_data = self.session.get_lyrics(track_id)
+
+        if 'error' in lyrics_data:
+            # search for title and artist to find a matching track (non Atmos)
+            results = self.search(
+                DownloadTypeEnum.track,
+                f'{track_data["title"]} {"".join(a["name"] for a in track_data["artists"])}',
+                limit=10)
+
+            # check every result to find a matching result
+            best_tracks = [r.result_id for r in results
+                           if r.name == track_data['title'] and
+                           r.artists[0] == track_data['artist']['name'] and
+                           'Dolby Atmos' not in r.additional]
+
+            # retrieve the lyrics for the first one, otherwise return empty dict
+            lyrics_data = self.session.get_lyrics(best_tracks[0]) if len(best_tracks) > 0 else {}
 
         if 'lyrics' in lyrics_data:
             embedded = lyrics_data['lyrics']
@@ -413,7 +458,7 @@ class ModuleInterface:
             # TODO: Use playlist creation date or lastUpdated?
             release_year=playlist_data['created'][:4],
             creator_id=playlist_data['creator']['id'],
-            cover_url=self.generate_artwork_url(playlist_data['squareImage'], max_size=1080)
+            cover_url=self.generate_artwork_url(playlist_data['squareImage'], size=self.cover_size, max_size=1080)
         )
 
     def get_album_info(self, album_id):
@@ -446,7 +491,8 @@ class ModuleInterface:
             explicit=album_data['explicit'],
             quality=quality,
             upc=album_data['upc'],
-            cover_url=self.generate_artwork_url(album_data['cover']),
+            all_track_cover_jpg_url=self.generate_artwork_url(album_data['cover'],
+                                                              size=self.cover_size) if album_data['cover'] else None,
             animated_cover_url=self.generate_animated_artwork_url(album_data['videoCover']) if album_data[
                 'videoCover'] else None,
             artist=album_data['artist']['name'],
