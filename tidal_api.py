@@ -305,9 +305,9 @@ class SessionStorage:
 
 
 class TidalSession(ABC):
-    '''
-    Tidal session object with all required functions needed
-    '''
+    """
+    Tidal abstract session object with all (abstract) functions needed: auth_headers(), refresh(), session_type()
+    """
     def __init__(self):
         self.access_token = None
         self.refresh_token = None
@@ -331,24 +331,23 @@ class TidalSession(ABC):
             self.country_code
         )
 
-    def check_subscription(self):
+    def get_subscription(self) -> str:
         if self.access_token:
             r = requests.get('https://api.tidal.com/v1/users/' + str(self.user_id) + '/subscription',
                              headers=self.auth_headers(), verify=False)
             if r.status_code != 200:
                 raise TidalAuthError(r.json()['userMessage'])
 
-            if r.json()['subscription']['type'] not in ['HIFI', 'PREMIUM_PLUS']:
-                raise TidalAuthError('You need a HiFi subscription!')
+            return r.json()['subscription']['type']
 
     @abstractmethod
     def auth_headers(self) -> dict:
         pass
 
     def valid(self):
-        '''
+        """
         Checks if session is still valid and returns True/False
-        '''
+        """
         if not isinstance(self, TidalSession):
             if self.access_token is None or datetime.now() > self.expires:
                 return False
@@ -366,9 +365,9 @@ class TidalSession(ABC):
 
 
 class TidalMobileSession(TidalSession):
-    '''
+    """
     Tidal session object based on the mobile Android oauth flow
-    '''
+    """
 
     def __init__(self, client_token: str):
         super().__init__()
@@ -472,8 +471,6 @@ class TidalMobileSession(TidalSession):
         self.user_id = r.json()['userId']
         self.country_code = r.json()['countryCode']
 
-        self.check_subscription()
-
     def refresh(self):
         assert (self.refresh_token is not None)
         r = requests.post(self.TIDAL_AUTH_BASE + 'oauth2/token', data={
@@ -511,9 +508,9 @@ class TidalMobileSession(TidalSession):
 
 
 class TidalTvSession(TidalSession):
-    '''
+    """
     Tidal session object based on the AndroidTV oauth flow
-    '''
+    """
 
     def __init__(self, client_token: str, client_secret: str):
         super().__init__()

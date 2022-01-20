@@ -5,9 +5,9 @@ OrpheusDL - Tidal
 
 A Tidal module for the OrpheusDL modular archival music program
 
-[Report Bug](https://github.com/yarrm80s/orpheusdl/issues)
+[Report Bug](https://github.com/Dniel97/orpheusdl-tidal/issues)
 ·
-[Request Feature](https://github.com/yarrm80s/orpheusdl/issues)
+[Request Feature](https://github.com/Dniel97/orpheusdl-tidal/issues)
 
 
 ## Table of content
@@ -69,21 +69,25 @@ loaded module. You'll find the configuration file here: `config/settings.json`
 
 ### Global
 
-```json
+```json5
 "global": {
     "general": {
-        ...
+        // ...
         "download_quality": "lossless"
     },
     "formatting": {
-        "album_format": "{artist}/{name}{quality}{explicit}",
-        ...
+        "album_format": "{artist}/{name}{quality}{explicit}"
+        // ...
     },
     "codecs": {
         "proprietary_codecs": false,
         "spatial_codecs": true
     },
-    ...
+    "covers": {
+	    "main_resolution": 1400
+	    // ...
+    }
+    // ...
 }
 ```
 
@@ -110,6 +114,11 @@ loaded module. You'll find the configuration file here: `config/settings.json`
 `proprietary_codecs`: Enables/Disables MQA (Tidal Masters) downloading regardless the "hifi" setting from `download_quality`
 
 `spatial_codecs`: Enables/Disables downloading of Dolby Atmos (EAC-3, AC-4) and Sony 360RA
+
+`main_resolution`: Tidal only supports 80x80, 160x160, 320x320, 480x480, 640x640, 1080x1080 and 1280x1280px
+(1280px won't work for playlists). If you choose 1400 or anything above 1280, it will get the highest quality even if 
+the highest is 4000x4000px. That's because Tidal doesn't provide the "origin artwork" size, so the module will just get
+the largest. 
 
 ### Tidal
 ```json
