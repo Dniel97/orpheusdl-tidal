@@ -93,7 +93,7 @@ loaded module. You'll find the configuration file here: `config/settings.json`
 
 `download_quality`: Choose one of the following settings:
 * "hifi": FLAC with MQA up to 48/24
-* "lossless": FLAC with 44.1/16
+* "lossless": FLAC with 44.1/16 (is MQA if the album is available in MQA)
 * "high": AAC 320 kbit/s
 * "low": AAC 96 kbit/s
 
@@ -126,7 +126,8 @@ the largest.
     "tv_token": "7m7Ap0JC9j1cOM3n",
     "tv_secret": "vRAdA108tlvkJpTsGZS8rGZ7xTlbJ0qaZ2K9saEzsgY=",
     "mobile_token": "dN2N95wCyEBTllu4",
-    "enable_mobile": true
+    "enable_mobile": true,
+    "prefer_ac4": false
 }
 ```
 `tv_token`: Enter a valid TV client token
@@ -137,6 +138,9 @@ the largest.
 
 `enable_mobile`: Enables a second MOBILE session which needs a `username` and `password` (can be the same "TV" account)
 to archive Sony 360RA and Dolby AC-4 if available
+
+`prefer_ac4`: If enabled and a mobile session is available (`enable_mobile` is set to `true`) this will ensure to get
+Dolby AC-4 on Dolby Atmos tracks
 
 <!-- Contact -->
 ## Contact

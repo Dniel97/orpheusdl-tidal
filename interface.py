@@ -22,7 +22,8 @@ module_information = ModuleInformation(
         'tv_token': '7m7Ap0JC9j1cOM3n',
         'tv_secret': 'vRAdA108tlvkJpTsGZS8rGZ7xTlbJ0qaZ2K9saEzsgY=',
         'mobile_token': 'dN2N95wCyEBTllu4',
-        'enable_mobile': True
+        'enable_mobile': True,
+        'prefer_ac4': False
     },
     session_storage_variables=[SessionType.TV.name, SessionType.MOBILE.name],
     netlocation_constant='tidal',
@@ -45,6 +46,7 @@ class ModuleInterface:
         self.oprinter = module_controller.printer_controller
         self.print = module_controller.printer_controller.oprint
         self.disable_subscription_check = module_controller.orpheus_options.disable_subscription_check
+        self.prefer_ac4 = module_controller.module_settings['prefer_ac4']
 
         settings = module_controller.module_settings
 
@@ -312,7 +314,9 @@ class ModuleInterface:
         album_data = data[album_id] if album_id in data else self.session.get_album(album_id)
 
         # get Sony 360RA and switch to mobile session
-        if track_data['audioModes'] == ['SONY_360RA'] and SessionType.MOBILE.name in self.available_sessions:
+        if (track_data['audioModes'] == ['SONY_360RA']
+            or (track_data['audioModes'] == ['DOLBY_ATMOS'] and self.prefer_ac4)) \
+                and SessionType.MOBILE.name in self.available_sessions:
             self.session.default = SessionType.MOBILE
         else:
             self.session.default = SessionType.TV
@@ -360,7 +364,7 @@ class ModuleInterface:
             release_year=track_data['streamStartDate'][:4],
             # TODO: Get correct bit_depth and sample_rate for MQA, even possible?
             bit_depth=24 if track_codec in [CodecEnum.MQA, CodecEnum.EAC3, CodecEnum.MHA1] else 16,
-            sample_rate=48 if track_codec in [CodecEnum.EAC3, CodecEnum.MHA1] else 44.1,
+            sample_rate=48 if track_codec in [CodecEnum.EAC3, CodecEnum.MHA1, CodecEnum.AC4] else 44.1,
             cover_url=self.generate_artwork_url(track_data['album']['cover'], size=self.cover_size),
             explicit=track_data['explicit'] if 'explicit' in track_data else None,
             tags=self.convert_tags(track_data, album_data),
