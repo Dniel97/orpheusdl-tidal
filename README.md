@@ -127,7 +127,8 @@ the largest.
     "tv_secret": "vRAdA108tlvkJpTsGZS8rGZ7xTlbJ0qaZ2K9saEzsgY=",
     "mobile_token": "dN2N95wCyEBTllu4",
     "enable_mobile": true,
-    "prefer_ac4": false
+    "prefer_ac4": false,
+    "fix_mqa": true
 }
 ```
 `tv_token`: Enter a valid TV client token
@@ -141,6 +142,17 @@ to archive Sony 360RA and Dolby AC-4 if available
 
 `prefer_ac4`: If enabled and a mobile session is available (`enable_mobile` is set to `true`) this will ensure to get
 Dolby AC-4 on Dolby Atmos tracks
+
+`fix_mqa`: If enabled it will download the MQA file before the actual track and analyze the FLAC file to extract the 
+bitDepth and originalSampleRate. The tags `MQAENCODER`, `ENCODER` and `ORIGINALSAMPLERATE` are than added to the FLAC
+file in order to get properly detected.
+
+**Credits: [MQA_identifier](https://github.com/purpl3F0x/MQA_identifier) by
+[@purpl3F0x](https://github.com/purpl3F0x) and [mqaid](https://github.com/redsudo/mqaid) by
+[@redsudo](https://github.com/redsudo).**
+
+**NOTE: `fix_mqa` is experimental! May not detect already existing tracks, 
+slower as normal download and could be not working at all**
 
 <!-- Contact -->
 ## Contact
