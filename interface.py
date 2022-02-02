@@ -277,14 +277,14 @@ class ModuleInterface:
 
         tracks = [str(track['item']['id']) for track in tracks_data['items']]
 
-        if album_data['audioModes'] == ['DOLBY_ATMOS']:
-            quality = 'Dolby Atmos'
-        elif album_data['audioModes'] == ['SONY_360RA']:
-            quality = '360'
-        elif album_data['audioQuality'] == 'HI_RES':
-            quality = 'M'
-        else:
-            quality = None
+        quality = None
+        if 'audioModes' in album_data:
+            if album_data['audioModes'] == ['DOLBY_ATMOS']:
+                quality = 'Dolby Atmos'
+            elif album_data['audioModes'] == ['SONY_360RA']:
+                quality = '360'
+            elif album_data['audioQuality'] == 'HI_RES':
+                quality = 'M'
 
         return AlbumInfo(
             name=album_data['title'],
