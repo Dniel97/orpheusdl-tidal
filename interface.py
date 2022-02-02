@@ -275,7 +275,8 @@ class ModuleInterface:
             track['item'].update({'credits': track['credits']})
             cache['data'][str(track['item']['id'])] = track['item']
 
-        tracks = [str(track['item']['id']) for track in tracks_data['items']]
+        # filter out video clips
+        tracks = [str(track['item']['id']) for track in tracks_data['items'] if track['type'] == 'track']
 
         quality = None
         if 'audioModes' in album_data:
@@ -289,7 +290,7 @@ class ModuleInterface:
         return AlbumInfo(
             name=album_data['title'],
             release_year=album_data['releaseDate'][:4],
-            explicit=album_data['explicit'],
+            explicit=album_data['explicit'] if 'explicit' in album_data else None,
             quality=quality,
             upc=album_data['upc'],
             all_track_cover_jpg_url=self.generate_artwork_url(album_data['cover'],
@@ -462,6 +463,9 @@ class ModuleInterface:
         temp_locations = []
         for download_url in bar:
             temp_locations.append(download_to_temp(download_url, extension='mp4'))
+
+        # needed for bar indent
+        bar.close()
 
         # concatenated/Merged .mp4 file
         merged_temp_location = create_temp_filename() + '.mp4'
