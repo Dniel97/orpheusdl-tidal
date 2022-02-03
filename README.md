@@ -151,8 +151,7 @@ file in order to get properly detected.
 [@purpl3F0x](https://github.com/purpl3F0x) and [mqaid](https://github.com/redsudo/mqaid) by
 [@redsudo](https://github.com/redsudo).**
 
-**NOTE: `fix_mqa` is experimental! May not detect already existing tracks, 
-slower as normal download and could be not working at all**
+**NOTE: `fix_mqa` is enabled which is experimental! May be slower as normal download and could not be working at all**
 
 <!-- Contact -->
 ## Contact

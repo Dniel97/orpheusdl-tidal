@@ -12,7 +12,7 @@ import ffmpeg
 from tqdm import tqdm
 
 from utils.models import *
-from utils.utils import sanitise_name, silentremove, download_to_temp, create_temp_filename
+from utils.utils import sanitise_name, silentremove, download_to_temp, create_temp_filename, create_requests_session
 from .mqa_identifier_python.mqa_identifier import MqaIdentifier
 from .tidal_api import TidalTvSession, TidalApi, SessionStorage, TidalMobileSession, SessionType
 
@@ -357,21 +357,16 @@ class ModuleInterface:
         else:
             # check if MQA
             if track_codec is CodecEnum.MQA and self.settings['fix_mqa']:
-                self.print(f'"fix_mqa" is enabled which is experimental! May not detect already existing tracks, '
-                           f'slower as normal download and could be not working at all', drop_level=1)
-                self.print(f'=== Downloading MQA {track_name} ({track_id}) ===', drop_level=1)
-                indent_level = self.oprinter.indent_number - self.oprinter.multiplier
-                # download the file to analyze it
-                temp_file_path = download_to_temp(manifest['urls'][0], enable_progress_bar=True,
-                                                  indent_level=indent_level)
-                download_args = {'temp_file_path': temp_file_path}
+                self.print(f'"fix_mqa" is enabled which is experimental! May be slower as normal download and could '
+                           f'not be working at all', drop_level=1)
+                # download the first chunk of the flac file to analyze it
+                temp_file_path = self.download_temp_header(manifest['urls'][0])
 
                 # detect MQA file
                 mqa_file = MqaIdentifier(temp_file_path)
 
-                self.print(f'=== MQA {track_id} downloaded ===', drop_level=1)
-            else:
-                download_args = {'file_url': manifest['urls'][0]}
+            # add the file to download_args
+            download_args = {'file_url': manifest['urls'][0]}
 
         bit_depth = 24 if track_codec in [CodecEnum.EAC3, CodecEnum.MHA1] else 16
         sample_rate = 48 if track_codec in [CodecEnum.EAC3, CodecEnum.MHA1, CodecEnum.AC4] else 44.1
@@ -404,6 +399,24 @@ class ModuleInterface:
             track_info.error = 'Spatial codecs are disabled, if you want to download it, set "spatial_codecs": true'
 
         return track_info
+
+    @staticmethod
+    def download_temp_header(file_url: str, chunk_size: int = 16384) -> str:
+        # create flac temp_location
+        temp_location = create_temp_filename() + '.flac'
+
+        # create session and download the file to the temp_location
+        r_session = create_requests_session()
+
+        r = r_session.get(file_url, stream=True, verify=False)
+        with open(temp_location, 'wb') as f:
+            # only download the first chunk_size bytes
+            for chunk in r.iter_content(chunk_size=chunk_size):
+                if chunk:  # filter out keep-alive new chunks
+                    f.write(chunk)
+                    break
+
+        return temp_location
 
     @staticmethod
     def parse_mpd(xml: bytes) -> list:
@@ -466,17 +479,13 @@ class ModuleInterface:
 
         return tracks
 
-    def get_track_download(self, file_url: str = None, temp_file_path: str = None, audio_track: AudioTrack = None) \
+    def get_track_download(self, file_url: str = None, audio_track: AudioTrack = None) \
             -> TrackDownloadInfo:
-        # only file_url, temp_file_path or audio_track at a time, with file_url > temp_file_path
+        # only file_url or audio_track at a time
 
-        # MHA1 or EC-3
+        # MHA1, EC-3 or MQA
         if file_url:
             return TrackDownloadInfo(download_type=DownloadEnum.URL, file_url=file_url)
-        
-        # MQA file with enabled "fix_mqa"
-        if temp_file_path:
-            return TrackDownloadInfo(download_type=DownloadEnum.TEMP_FILE_PATH, temp_file_path=temp_file_path)
 
         # MPEG-DASH
         # use the total_file size for a better progress bar? Is it even possible to calculate the total size from MPD?

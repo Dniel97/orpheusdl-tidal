@@ -58,7 +58,7 @@ MAGIC = 51007556744  # int.from_bytes(bytes.fromhex('0be0498c88'), 'big') jesus 
 
 
 class MqaIdentifier:
-    def __init__(self, flac_file_path: Path):
+    def __init__(self, flac_file_path: str or Path):
         self.is_mqa = False
         self.is_mqa_studio = False
         self.original_sample_rate = None
@@ -76,7 +76,7 @@ class MqaIdentifier:
             return int(sample_rate)
         return sample_rate
 
-    def _decode_flac_samples(self, flac_file_path) -> list:
+    def _decode_flac_samples(self, flac_file_path: str or Path) -> list:
         """
         Decodes a 16/24bit flac file to a samples list
 
@@ -89,7 +89,11 @@ class MqaIdentifier:
             if magic == b'fLaC':
                 with flac.BitInputStream(f) as bf:
                     f = io.BytesIO()
-                    flac.decode_file(bf, f, seconds=1)
+                    # ignore EOFError
+                    try:
+                        flac.decode_file(bf, f, seconds=1)
+                    except EOFError:
+                        pass
                     f.seek(0)
 
             with wave.open(f) as wf:
@@ -108,7 +112,7 @@ class MqaIdentifier:
 
                 return list(iter_data(wf.readframes(framerate)))
 
-    def detect(self, flac_file_path) -> bool:
+    def detect(self, flac_file_path: str or Path) -> bool:
         """
         Detects if the FLAC file is a MQA file and also detects if it's MQA Studio (blue) and the originalSampleRate
 
