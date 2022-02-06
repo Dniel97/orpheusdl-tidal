@@ -156,34 +156,34 @@ class ModuleInterface:
         results = self.session.get_search_data(query, limit=limit)
 
         items = []
-        for i in results[query_type.name + 's']['items']:
+        for i in results[query_type.name + 's'].get('items'):
             if query_type is DownloadTypeEnum.artist:
-                name = i['name']
+                name = i.get('name')
                 artists = None
                 year = None
             elif query_type is DownloadTypeEnum.playlist:
-                name = i['title']
-                artists = [i['creator']['name']]
+                name = i.get('title')
+                artists = [i.get('creator').get('name')]
                 year = ""
             elif query_type is DownloadTypeEnum.track:
-                name = i['title']
-                artists = [j['name'] for j in i['artists']]
+                name = i.get('title')
+                artists = [j.get('name') for j in i.get('artists')]
                 # Getting the year from the album?
-                year = i['album']['releaseDate'][:4]
+                year = i.get('album').get('releaseDate')[:4]
             elif query_type is DownloadTypeEnum.album:
-                name = i['title']
-                artists = [j['name'] for j in i['artists']]
-                year = i['releaseDate'][:4]
+                name = i.get('title')
+                artists = [j.get('name') for j in i.get('artists')]
+                year = i.get('releaseDate')[:4]
             else:
                 raise Exception('Query type is invalid')
 
             additional = None
             if query_type is not DownloadTypeEnum.artist:
-                if i['audioModes'] == ['DOLBY_ATMOS']:
+                if i.get('audioModes') == ['DOLBY_ATMOS']:
                     additional = "Dolby Atmos"
-                elif i['audioModes'] == ['SONY_360RA']:
+                elif i.get('audioModes') == ['SONY_360RA']:
                     additional = "360 Reality Audio"
-                elif i['audioQuality'] == 'HI_RES':
+                elif i.get('audioQuality') == 'HI_RES':
                     additional = "MQA"
                 else:
                     additional = 'HiFi'
@@ -192,8 +192,8 @@ class ModuleInterface:
                 name=name,
                 artists=artists,
                 year=year,
-                result_id=str(i['id']),
-                explicit=bool(i['explicit']) if 'explicit' in i else None,
+                result_id=str(i.get('id')),
+                explicit=i.get('explicit'),
                 additional=[additional] if additional else None
             )
 
@@ -205,31 +205,34 @@ class ModuleInterface:
         playlist_data = self.session.get_playlist(playlist_id)
         playlist_tracks = self.session.get_playlist_items(playlist_id)
 
-        tracks = [track['item']['id'] for track in playlist_tracks['items'] if track['type'] == 'track']
+        tracks = [track.get('item').get('id') for track in playlist_tracks.get('items') if track.get('type') == 'track']
 
-        if 'name' in playlist_data['creator']:
-            creator_name = playlist_data['creator']['name']
-        elif playlist_data['creator']['id'] == 0:
+        if 'name' in playlist_data.get('creator'):
+            creator_name = playlist_data.get('creator').get('name')
+        elif playlist_data.get('creator').get('id') == 0:
             creator_name = 'TIDAL'
         else:
             creator_name = 'Unknown'
 
         return PlaylistInfo(
-            name=playlist_data['title'],
+            name=playlist_data.get('title'),
             creator=creator_name,
             tracks=tracks,
             # TODO: Use playlist creation date or lastUpdated?
-            release_year=playlist_data['created'][:4],
-            creator_id=playlist_data['creator']['id'],
-            cover_url=self.generate_artwork_url(playlist_data['squareImage'], size=self.cover_size, max_size=1080),
-            track_extra_kwargs={'data': {track['item']['id']: track['item'] for track in playlist_tracks['items']}}
+            release_year=playlist_data.get('created')[:4],
+            creator_id=playlist_data['creator'].get('id'),
+            cover_url=self.generate_artwork_url(playlist_data['squareImage'], size=self.cover_size,
+                                                max_size=1080) if playlist_data['squareImage'] else None,
+            track_extra_kwargs={
+                'data': {track.get('item').get('id'): track.get('item') for track in playlist_tracks.get('items')}
+            }
         )
 
     def get_artist_info(self, artist_id: str, get_credited_albums: bool) -> ArtistInfo:
         artist_data = self.session.get_artist(artist_id)
 
-        artist_albums = self.session.get_artist_albums(artist_id)['items']
-        artist_singles = self.session.get_artist_albums_ep_singles(artist_id)['items']
+        artist_albums = self.session.get_artist_albums(artist_id).get('items')
+        artist_singles = self.session.get_artist_albums_ep_singles(artist_id).get('items')
 
         # Only works with a mobile session, annoying, never do this again
         credit_albums = []
@@ -248,15 +251,15 @@ class ModuleInterface:
                 print(f'Fetching {offset * 50}/{total_items}', end='\r')
                 items += self.session.get_page(more_items_link, params={'limit': 50, 'offset': offset * 50})['items']
 
-            credit_albums = [item['item']['album'] for item in items]
+            credit_albums = [item.get('item').get('album') for item in items]
             self.session.default = SessionType.TV
 
-        albums = [str(album['id']) for album in artist_albums + artist_singles + credit_albums]
+        albums = [str(album.get('id')) for album in artist_albums + artist_singles + credit_albums]
 
         return ArtistInfo(
-            name=artist_data['name'],
+            name=artist_data.get('name'),
             albums=albums,
-            album_extra_kwargs={'data': {str(album['id']): album for album in
+            album_extra_kwargs={'data': {str(album.get('id')): album for album in
                                          artist_albums + artist_singles + credit_albums}}
         )
 
@@ -272,12 +275,12 @@ class ModuleInterface:
 
         # add the track contributors to a new list called 'credits'
         cache = {'data': {}}
-        for track in tracks_data['items']:
-            track['item'].update({'credits': track['credits']})
-            cache['data'][str(track['item']['id'])] = track['item']
+        for track in tracks_data.get('items'):
+            track.get('item').update({'credits': track.get('credits')})
+            cache.get('data')[str(track.get('item').get('id'))] = track.get('item')
 
         # filter out video clips
-        tracks = [str(track['item']['id']) for track in tracks_data['items'] if track['type'] == 'track']
+        tracks = [str(track['item']['id']) for track in tracks_data.get('items') if track.get('type') == 'track']
 
         quality = None
         if 'audioModes' in album_data:
@@ -289,17 +292,17 @@ class ModuleInterface:
                 quality = 'M'
 
         return AlbumInfo(
-            name=album_data['title'],
-            release_year=album_data['releaseDate'][:4],
-            explicit=album_data['explicit'] if 'explicit' in album_data else None,
+            name=album_data.get('title'),
+            release_year=album_data.get('releaseDate')[:4],
+            explicit=album_data.get('explicit'),
             quality=quality,
-            upc=album_data['upc'],
-            all_track_cover_jpg_url=self.generate_artwork_url(album_data['cover'],
-                                                              size=self.cover_size) if album_data['cover'] else None,
-            animated_cover_url=self.generate_animated_artwork_url(album_data['videoCover']) if album_data[
-                'videoCover'] else None,
-            artist=album_data['artist']['name'],
-            artist_id=album_data['artist']['id'],
+            upc=album_data.get('upc'),
+            cover_url=self.generate_artwork_url(album_data.get('cover'),
+                                                size=self.cover_size) if album_data.get('cover') else None,
+            animated_cover_url=self.generate_animated_artwork_url(album_data.get('videoCover')) if album_data.get(
+                'videoCover') else None,
+            artist=album_data.get('artist').get('name'),
+            artist_id=album_data.get('artist').get('id'),
             tracks=tracks,
             track_extra_kwargs=cache
         )
@@ -311,13 +314,13 @@ class ModuleInterface:
 
         track_data = data[track_id] if track_id in data else self.session.get_track(track_id)
 
-        album_id = str(track_data['album']['id'])
+        album_id = str(track_data.get('album').get('id'))
         # check if album is already in album cache, get it
         album_data = data[album_id] if album_id in data else self.session.get_album(album_id)
 
         # get Sony 360RA and switch to mobile session
-        if (track_data['audioModes'] == ['SONY_360RA']
-            or (track_data['audioModes'] == ['DOLBY_ATMOS'] and self.settings['prefer_ac4'])) \
+        if (track_data.get('audioModes') == ['SONY_360RA']
+            or (track_data.get('audioModes') == ['DOLBY_ATMOS'] and self.settings['prefer_ac4'])) \
                 and SessionType.MOBILE.name in self.available_sessions:
             self.session.default = SessionType.MOBILE
         else:
@@ -349,8 +352,8 @@ class ModuleInterface:
                     manifest = json.loads(base64.b64decode(stream_data['manifest']))
                     track_codec = CodecEnum['AAC' if 'mp4a' in manifest['codecs'] else manifest['codecs'].upper()]
 
-        track_name = track_data["title"]
-        track_name += f' ({track_data["version"]})' if track_data['version'] else ''
+        track_name = track_data.get('title')
+        track_name += f' ({track_data.get("version")})' if track_data.get("version") else ''
 
         mqa_file = None
         if audio_track:
@@ -379,15 +382,16 @@ class ModuleInterface:
 
         track_info = TrackInfo(
             name=track_name,
-            album=album_data['title'],
+            album=album_data.get('title'),
             album_id=album_id,
-            artists=[a['name'] for a in track_data['artists']],
-            artist_id=track_data['artist']['id'],
-            release_year=track_data['streamStartDate'][:4],
+            artists=[a.get('name') for a in track_data.get('artists')],
+            artist_id=track_data['artist'].get('id'),
+            release_year=track_data.get('streamStartDate')[:4],
             bit_depth=bit_depth,
             sample_rate=sample_rate,
-            cover_url=self.generate_artwork_url(track_data['album']['cover'], size=self.cover_size),
-            explicit=track_data['explicit'] if 'explicit' in track_data else None,
+            cover_url=self.generate_artwork_url(track_data['album'].get('cover'),
+                                                size=self.cover_size) if track_data['album'].get('cover') else None,
+            explicit=track_data.get('explicit'),
             tags=self.convert_tags(track_data, album_data, mqa_file),
             codec=track_codec,
             download_extra_kwargs=download_args,
@@ -548,38 +552,34 @@ class ModuleInterface:
             data = {}
 
         track_data = data[track_id] if track_id in data else self.session.get_track(track_id)
-        cover_id = track_data['album']['cover']
+        cover_id = track_data['album'].get('cover')
 
         # Tidal don't support PNG, so it will always get JPG
         cover_url = self.generate_artwork_url(cover_id, size=cover_options.resolution)
         return CoverInfo(url=cover_url, file_type=ImageFileTypeEnum.jpg)
 
     def get_track_lyrics(self, track_id: str, track_data: dict) -> LyricsInfo:
-        embedded, synced = None, None
-
+        # get lyrics data for current track id
         lyrics_data = self.session.get_lyrics(track_id)
 
         if 'error' in lyrics_data:
             # search for title and artist to find a matching track (non Atmos)
             results = self.search(
                 DownloadTypeEnum.track,
-                f'{track_data["title"]} {"".join(a["name"] for a in track_data["artists"])}',
+                f'{track_data.get("title")} {"".join(a.get("name") for a in track_data.get("artists"))}',
                 limit=10)
 
             # check every result to find a matching result
             best_tracks = [r.result_id for r in results
-                           if r.name == track_data['title'] and
-                           r.artists[0] == track_data['artist']['name'] and
+                           if r.name == track_data.get('title') and
+                           r.artists[0] == track_data.get('artist').get('name') and
                            'Dolby Atmos' not in r.additional]
 
             # retrieve the lyrics for the first one, otherwise return empty dict
             lyrics_data = self.session.get_lyrics(best_tracks[0]) if len(best_tracks) > 0 else {}
 
-        if 'lyrics' in lyrics_data:
-            embedded = lyrics_data['lyrics']
-
-        if 'subtitles' in lyrics_data:
-            synced = lyrics_data['subtitles']
+        embedded = lyrics_data.get('lyrics')
+        synced = lyrics_data.get('subtitles')
 
         return LyricsInfo(
             embedded=embedded,
@@ -597,17 +597,17 @@ class ModuleInterface:
             track_contributors = data[track_id]
 
             for contributor in track_contributors:
-                credits_dict[contributor['type']] = [c['name'] for c in contributor['contributors']]
+                credits_dict[contributor.get('type')] = [c.get('name') for c in contributor.get('contributors')]
         else:
-            track_contributors = self.session.get_track_contributors(track_id)['items']
+            track_contributors = self.session.get_track_contributors(track_id).get('items')
 
             if len(track_contributors) > 0:
                 for contributor in track_contributors:
                     # check if the dict contains no list, create one
-                    if contributor['role'] not in credits_dict:
-                        credits_dict[contributor['role']] = []
+                    if contributor.get('role') not in credits_dict:
+                        credits_dict[contributor.get('role')] = []
 
-                    credits_dict[contributor['role']].append(contributor['name'])
+                    credits_dict[contributor.get('role')].append(contributor.get('name'))
 
         if len(credits_dict) > 0:
             # convert the dictionary back to a list of CreditsInfo
@@ -616,8 +616,8 @@ class ModuleInterface:
 
     @staticmethod
     def convert_tags(track_data: dict, album_data: dict, mqa_file: MqaIdentifier = None) -> Tags:
-        track_name = track_data["title"]
-        track_name += f' ({track_data["version"]})' if track_data['version'] else ''
+        track_name = track_data.get('title')
+        track_name += f' ({track_data.get("version")})' if track_data.get('version') else ''
 
         extra_tags = {}
         if mqa_file is not None:
@@ -629,16 +629,16 @@ class ModuleInterface:
             }
 
         return Tags(
-            album_artist=album_data['artist']['name'],
-            track_number=track_data['trackNumber'],
-            total_tracks=album_data['numberOfTracks'],
-            disc_number=track_data['volumeNumber'],
-            total_discs=album_data['numberOfVolumes'],
-            isrc=track_data['isrc'],
-            upc=album_data['upc'],
-            release_date=album_data['releaseDate'] if 'releaseDate' in album_data else None,
-            copyright=track_data['copyright'],
-            replay_gain=track_data['replayGain'],
-            replay_peak=track_data['peak'],
+            album_artist=album_data['artist'].get('name'),
+            track_number=track_data.get('trackNumber'),
+            total_tracks=album_data.get('numberOfTracks'),
+            disc_number=track_data.get('volumeNumber'),
+            total_discs=album_data.get('numberOfVolumes'),
+            isrc=track_data.get('isrc'),
+            upc=album_data.get('upc'),
+            release_date=album_data.get('releaseDate'),
+            copyright=track_data.get('copyright'),
+            replay_gain=track_data.get('replayGain'),
+            replay_peak=track_data.get('peak'),
             extra_tags=extra_tags
         )
