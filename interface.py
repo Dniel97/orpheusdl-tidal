@@ -2,6 +2,7 @@ import base64
 import json
 import logging
 import re
+from datetime import datetime
 from getpass import getpass
 from dataclasses import dataclass
 from shutil import copyfileobj
@@ -11,7 +12,8 @@ import ffmpeg
 from tqdm import tqdm
 
 from utils.models import *
-from utils.utils import sanitise_name, silentremove, download_to_temp, create_temp_filename
+from utils.utils import sanitise_name, silentremove, download_to_temp, create_temp_filename, create_requests_session
+from .mqa_identifier_python.mqa_identifier import MqaIdentifier
 from .tidal_api import TidalTvSession, TidalApi, SessionStorage, TidalMobileSession, SessionType
 
 module_information = ModuleInformation(
@@ -23,7 +25,8 @@ module_information = ModuleInformation(
         'tv_secret': 'vRAdA108tlvkJpTsGZS8rGZ7xTlbJ0qaZ2K9saEzsgY=',
         'mobile_token': 'dN2N95wCyEBTllu4',
         'enable_mobile': True,
-        'prefer_ac4': False
+        'prefer_ac4': False,
+        'fix_mqa': True
     },
     session_storage_variables=[SessionType.TV.name, SessionType.MOBILE.name],
     netlocation_constant='tidal',
@@ -46,9 +49,7 @@ class ModuleInterface:
         self.oprinter = module_controller.printer_controller
         self.print = module_controller.printer_controller.oprint
         self.disable_subscription_check = module_controller.orpheus_options.disable_subscription_check
-        self.prefer_ac4 = module_controller.module_settings['prefer_ac4']
-
-        settings = module_controller.module_settings
+        self.settings = module_controller.module_settings
 
         # LOW = 96kbit/s AAC, HIGH = 320kbit/s AAC, LOSSLESS = 44.1/16 FLAC, HI_RES <= 48/24 FLAC with MQA
         self.quality_parse = {
@@ -62,7 +63,7 @@ class ModuleInterface:
         sessions = {}
         self.available_sessions = [SessionType.TV.name, SessionType.MOBILE.name]
 
-        if settings['enable_mobile']:
+        if self.settings['enable_mobile']:
             storage: SessionStorage = module_controller.temporary_settings_controller.read(SessionType.MOBILE.name)
             if not storage:
                 confirm = input(' "enable_mobile" is enabled but no MOBILE session was found. Do you want to create a '
@@ -76,9 +77,9 @@ class ModuleInterface:
             storage: SessionStorage = module_controller.temporary_settings_controller.read(session_type)
 
             if session_type == SessionType.TV.name:
-                sessions[session_type] = TidalTvSession(settings['tv_token'], settings['tv_secret'])
+                sessions[session_type] = TidalTvSession(self.settings['tv_token'], self.settings['tv_secret'])
             else:
-                sessions[session_type] = TidalMobileSession(settings['mobile_token'])
+                sessions[session_type] = TidalMobileSession(self.settings['mobile_token'])
 
             if storage:
                 logging.debug(f'Tidal: {session_type} session found, loading')
@@ -316,7 +317,7 @@ class ModuleInterface:
 
         # get Sony 360RA and switch to mobile session
         if (track_data['audioModes'] == ['SONY_360RA']
-            or (track_data['audioModes'] == ['DOLBY_ATMOS'] and self.prefer_ac4)) \
+            or (track_data['audioModes'] == ['DOLBY_ATMOS'] and self.settings['prefer_ac4'])) \
                 and SessionType.MOBILE.name in self.available_sessions:
             self.session.default = SessionType.MOBILE
         else:
@@ -351,10 +352,30 @@ class ModuleInterface:
         track_name = track_data["title"]
         track_name += f' ({track_data["version"]})' if track_data['version'] else ''
 
+        mqa_file = None
         if audio_track:
             download_args = {'audio_track': audio_track}
         else:
+            # check if MQA
+            if track_codec is CodecEnum.MQA and self.settings['fix_mqa']:
+                self.print(f'"fix_mqa" is enabled which is experimental! May be slower as normal download and could '
+                           f'not be working at all', drop_level=1)
+                # download the first chunk of the flac file to analyze it
+                temp_file_path = self.download_temp_header(manifest['urls'][0])
+
+                # detect MQA file
+                mqa_file = MqaIdentifier(temp_file_path)
+
+            # add the file to download_args
             download_args = {'file_url': manifest['urls'][0]}
+
+        bit_depth = 24 if track_codec in [CodecEnum.EAC3, CodecEnum.MHA1] else 16
+        sample_rate = 48 if track_codec in [CodecEnum.EAC3, CodecEnum.MHA1, CodecEnum.AC4] else 44.1
+
+        # now set everything for MQA
+        if mqa_file is not None and mqa_file.is_mqa:
+            bit_depth = mqa_file.bit_depth
+            sample_rate = mqa_file.get_original_sample_rate()
 
         track_info = TrackInfo(
             name=track_name,
@@ -363,12 +384,11 @@ class ModuleInterface:
             artists=[a['name'] for a in track_data['artists']],
             artist_id=track_data['artist']['id'],
             release_year=track_data['streamStartDate'][:4],
-            # TODO: Get correct bit_depth and sample_rate for MQA, even possible?
-            bit_depth=24 if track_codec in [CodecEnum.MQA, CodecEnum.EAC3, CodecEnum.MHA1] else 16,
-            sample_rate=48 if track_codec in [CodecEnum.EAC3, CodecEnum.MHA1, CodecEnum.AC4] else 44.1,
+            bit_depth=bit_depth,
+            sample_rate=sample_rate,
             cover_url=self.generate_artwork_url(track_data['album']['cover'], size=self.cover_size),
             explicit=track_data['explicit'] if 'explicit' in track_data else None,
-            tags=self.convert_tags(track_data, album_data),
+            tags=self.convert_tags(track_data, album_data, mqa_file),
             codec=track_codec,
             download_extra_kwargs=download_args,
             lyrics_extra_kwargs={'track_data': track_data},
@@ -380,6 +400,24 @@ class ModuleInterface:
             track_info.error = 'Spatial codecs are disabled, if you want to download it, set "spatial_codecs": true'
 
         return track_info
+
+    @staticmethod
+    def download_temp_header(file_url: str, chunk_size: int = 16384) -> str:
+        # create flac temp_location
+        temp_location = create_temp_filename() + '.flac'
+
+        # create session and download the file to the temp_location
+        r_session = create_requests_session()
+
+        r = r_session.get(file_url, stream=True, verify=False)
+        with open(temp_location, 'wb') as f:
+            # only download the first chunk_size bytes
+            for chunk in r.iter_content(chunk_size=chunk_size):
+                if chunk:  # filter out keep-alive new chunks
+                    f.write(chunk)
+                    break
+
+        return temp_location
 
     @staticmethod
     def parse_mpd(xml: bytes) -> list:
@@ -442,8 +480,11 @@ class ModuleInterface:
 
         return tracks
 
-    def get_track_download(self, file_url: str = None, audio_track: AudioTrack = None) -> TrackDownloadInfo:
-        # no MPEG-DASH, just a simple file
+    def get_track_download(self, file_url: str = None, audio_track: AudioTrack = None) \
+            -> TrackDownloadInfo:
+        # only file_url or audio_track at a time
+
+        # MHA1, EC-3 or MQA
         if file_url:
             return TrackDownloadInfo(download_type=DownloadEnum.URL, file_url=file_url)
 
@@ -574,9 +615,18 @@ class ModuleInterface:
         return None
 
     @staticmethod
-    def convert_tags(track_data: dict, album_data: dict) -> Tags:
+    def convert_tags(track_data: dict, album_data: dict, mqa_file: MqaIdentifier = None) -> Tags:
         track_name = track_data["title"]
         track_name += f' ({track_data["version"]})' if track_data['version'] else ''
+
+        extra_tags = {}
+        if mqa_file is not None:
+            encoder_time = datetime.now().strftime("%b %d %Y %H:%M:%S")
+            extra_tags = {
+                'ENCODER': f'MQAEncode v1.1, 2.4.0+0 (278f5dd), E24F1DE5-32F1-4930-8197-24954EB9D6F4, {encoder_time}',
+                'MQAENCODER': f'MQAEncode v1.1, 2.4.0+0 (278f5dd), E24F1DE5-32F1-4930-8197-24954EB9D6F4, {encoder_time}',
+                'ORIGINALSAMPLERATE': str(mqa_file.original_sample_rate)
+            }
 
         return Tags(
             album_artist=album_data['artist']['name'],
@@ -589,5 +639,6 @@ class ModuleInterface:
             release_date=album_data['releaseDate'] if 'releaseDate' in album_data else None,
             copyright=track_data['copyright'],
             replay_gain=track_data['replayGain'],
-            replay_peak=track_data['peak']
+            replay_peak=track_data['peak'],
+            extra_tags=extra_tags
         )
