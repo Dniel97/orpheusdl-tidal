@@ -182,11 +182,11 @@ class TidalApi(object):
     def get_track_contributors(self, track_id):
         return self._get('tracks/' + str(track_id) + '/contributors')
 
-    def get_album_contributors(self, album_id):
+    def get_album_contributors(self, album_id, offset: int = 0, limit: int = 100):
         return self._get('albums/' + album_id + '/items/credits', params={
             'replace': True,
-            'offset': 0,
-            'limit': 100,
+            'offset': offset,
+            'limit': limit,
             'includeContributors': True
         })
 

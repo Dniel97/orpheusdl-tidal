@@ -254,11 +254,12 @@ class ModuleInterface:
             credit_albums = [item.get('item').get('album') for item in items]
             self.session.default = SessionType.TV
 
-        albums = [str(album.get('id')) for album in artist_albums + artist_singles + credit_albums]
+        # use set to filter out duplicate album ids
+        albums = {str(album.get('id')) for album in artist_albums + artist_singles + credit_albums}
 
         return ArtistInfo(
             name=artist_data.get('name'),
-            albums=albums,
+            albums=list(albums),
             album_extra_kwargs={'data': {str(album.get('id')): album for album in
                                          artist_albums + artist_singles + credit_albums}}
         )
@@ -270,8 +271,17 @@ class ModuleInterface:
 
         album_data = data[album_id] if album_id in data else self.session.get_album(album_id)
 
-        # get all album tracks with corresponding credits
-        tracks_data = self.session.get_album_contributors(album_id)
+        # get all album tracks with corresponding credits with a limit of 100
+        limit = 100
+        tracks_data = self.session.get_album_contributors(album_id, limit=limit)
+        total_tracks = tracks_data.get('totalNumberOfItems')
+
+        # round total_tracks to the next 100 and loop over the offset, that's hideous
+        for offset in range(limit, ((total_tracks // limit) + 1) * limit, limit):
+            # fetch the new album tracks with the given offset
+            track_items = self.session.get_album_contributors(album_id, offset=offset, limit=limit)
+            # append those tracks to the album_data
+            tracks_data['items'] += track_items
 
         # add the track contributors to a new list called 'credits'
         cache = {'data': {}}
