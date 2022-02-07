@@ -23,12 +23,14 @@ module_information = ModuleInformation(
     global_settings={
         'tv_token': '7m7Ap0JC9j1cOM3n',
         'tv_secret': 'vRAdA108tlvkJpTsGZS8rGZ7xTlbJ0qaZ2K9saEzsgY=',
-        'mobile_token': 'dN2N95wCyEBTllu4',
+        'mobile_atmos_token': 'dN2N95wCyEBTllu4',
+        'mobile_default_token': 'WAU9gXp3tHhK4Nns',
         'enable_mobile': True,
+        'force_non_spatial': False,
         'prefer_ac4': False,
         'fix_mqa': True
     },
-    session_storage_variables=[SessionType.TV.name, SessionType.MOBILE.name],
+    session_storage_variables=['sessions'],
     netlocation_constant='tidal',
     test_url='https://tidal.com/browse/track/92265335'
 )
@@ -60,12 +62,18 @@ class ModuleInterface:
             QualityEnum.HIFI: 'HI_RES'
         }
 
+        # save all the TidalSession objects
         sessions = {}
-        self.available_sessions = [SessionType.TV.name, SessionType.MOBILE.name]
+        self.available_sessions = [SessionType.TV.name, SessionType.MOBILE_DEFAULT.name, SessionType.MOBILE_ATMOS.name]
+
+        # load all saved sessions (TV, Mobile Atmos, Mobile Default)
+        saved_sessions = module_controller.temporary_settings_controller.read('sessions')
+        if not saved_sessions:
+            saved_sessions = {}
 
         if self.settings['enable_mobile']:
-            storage: SessionStorage = module_controller.temporary_settings_controller.read(SessionType.MOBILE.name)
-            if not storage:
+            # check all saved session for a session starting with "MOBILE"
+            if not any(session for session in saved_sessions.keys() if session[:6] == 'MOBILE'):
                 confirm = input(' "enable_mobile" is enabled but no MOBILE session was found. Do you want to create a '
                                 'MOBILE session (used for AC-4/360RA) [Y/n]? ')
                 if confirm.upper() == 'N':
@@ -73,36 +81,45 @@ class ModuleInterface:
         else:
             self.available_sessions = [SessionType.TV.name]
 
+        username, password = None, None
         for session_type in self.available_sessions:
-            storage: SessionStorage = module_controller.temporary_settings_controller.read(session_type)
-
+            # create all sessions with the needed API keys
             if session_type == SessionType.TV.name:
                 sessions[session_type] = TidalTvSession(self.settings['tv_token'], self.settings['tv_secret'])
+            elif session_type == SessionType.MOBILE_ATMOS.name:
+                sessions[session_type] = TidalMobileSession(self.settings['mobile_atmos_token'])
             else:
-                sessions[session_type] = TidalMobileSession(self.settings['mobile_token'])
+                sessions[session_type] = TidalMobileSession(self.settings['mobile_default_token'])
 
-            if storage:
+            if session_type in saved_sessions:
                 logging.debug(f'Tidal: {session_type} session found, loading')
 
-                sessions[session_type].set_storage(storage)
+                # load the dictionary from the temporary_settings_controller inside the TidalSession class
+                sessions[session_type].set_storage(saved_sessions[session_type])
             else:
                 logging.debug(f'Tidal: No {session_type} session found, creating new one')
                 if session_type == SessionType.TV.name:
+                    self.print('Tidal: Creating a TV session')
                     sessions[session_type].auth()
                 else:
-                    self.print('Tidal: Enter your Tidal username and password:')
-                    username = input(' Username: ')
-                    password = getpass(' Password: ')
+                    if not username or not password:
+                        self.print('Tidal: Creating a Mobile session')
+                        self.print('Tidal: Enter your Tidal username and password:')
+                        username = input(' Username: ')
+                        password = getpass(' Password: ')
                     sessions[session_type].auth(username, password)
-                    self.print('Successfully logged in!')
+                    self.print(f'Successfully logged in, using {session_type} token!')
 
-                module_controller.temporary_settings_controller.set(session_type, sessions[session_type].get_storage())
+                # get the dict representation from the TidalSession object and save it into saved_session/loginstorage
+                saved_sessions[session_type] = sessions[session_type].get_storage()
+                module_controller.temporary_settings_controller.set('sessions', saved_sessions)
 
-            # Always try to refresh session
+            # always try to refresh session
             if not sessions[session_type].valid():
                 sessions[session_type].refresh()
                 # Save the refreshed session in the temporary settings
-                module_controller.temporary_settings_controller.set(session_type, sessions[session_type].get_storage())
+                saved_sessions[session_type] = sessions[session_type].get_storage()
+                module_controller.temporary_settings_controller.set('sessions', saved_sessions)
 
             while True:
                 # check for a valid subscription
@@ -118,16 +135,22 @@ class ModuleInterface:
 
                 # create a new session finally
                 if session_type == SessionType.TV.name:
+                    self.print('Tidal: Recreating a TV session')
                     sessions[session_type].auth()
                 else:
+                    self.print('Tidal: Recreating a Mobile session')
                     self.print('Tidal: Enter your Tidal username and password:')
                     username = input('Username: ')
                     password = getpass('Password: ')
                     sessions[session_type].auth(username, password)
 
-                module_controller.temporary_settings_controller.set(session_type,
-                                                                    sessions[session_type].get_storage())
+                saved_sessions[session_type] = sessions[session_type].get_storage()
+                module_controller.temporary_settings_controller.set('sessions', saved_sessions)
 
+        # reset username and password
+        username, password = None, None
+
+        # load the Tidal session with all saved sessions (TV, Mobile Atmos, Mobile Default)
         self.session: TidalApi = TidalApi(sessions)
 
     def check_subscription(self, subscription: str) -> bool:
@@ -236,8 +259,8 @@ class ModuleInterface:
 
         # Only works with a mobile session, annoying, never do this again
         credit_albums = []
-        if get_credited_albums and SessionType.MOBILE.name in self.available_sessions:
-            self.session.default = SessionType.MOBILE
+        if get_credited_albums and SessionType.MOBILE_DEFAULT.name in self.available_sessions:
+            self.session.default = SessionType.MOBILE_DEFAULT
             credited_albums_page = self.session.get_page('contributor', params={'artistId': artist_id})
 
             # This is so retarded
@@ -328,11 +351,16 @@ class ModuleInterface:
         # check if album is already in album cache, get it
         album_data = data[album_id] if album_id in data else self.session.get_album(album_id)
 
-        # get Sony 360RA and switch to mobile session
-        if (track_data.get('audioModes') == ['SONY_360RA']
-            or (track_data.get('audioModes') == ['DOLBY_ATMOS'] and self.settings['prefer_ac4'])) \
-                and SessionType.MOBILE.name in self.available_sessions:
-            self.session.default = SessionType.MOBILE
+        # check if album is only available in LOSSLESS and STEREO, so it switches to the MOBILE_DEFAULT which will
+        # get FLACs faster
+        if (self.settings['force_non_spatial'] or (
+                album_data.get('audioQuality') == 'LOSSLESS' and album_data.get('audioModes') == ['STEREO'])) and \
+            SessionType.MOBILE_DEFAULT.name in self.available_sessions:
+            self.session.default = SessionType.MOBILE_DEFAULT
+        elif (track_data.get('audioModes') == ['SONY_360RA']
+              or (track_data.get('audioModes') == ['DOLBY_ATMOS'] and self.settings['prefer_ac4'])) \
+                and SessionType.MOBILE_ATMOS.name in self.available_sessions:
+            self.session.default = SessionType.MOBILE_ATMOS
         else:
             self.session.default = SessionType.TV
 

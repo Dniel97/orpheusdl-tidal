@@ -122,11 +122,13 @@ the largest.
 
 ### Tidal
 ```json
- "tidal": {
+{
     "tv_token": "7m7Ap0JC9j1cOM3n",
     "tv_secret": "vRAdA108tlvkJpTsGZS8rGZ7xTlbJ0qaZ2K9saEzsgY=",
-    "mobile_token": "dN2N95wCyEBTllu4",
+    "mobile_atmos_token": "dN2N95wCyEBTllu4",
+    "mobile_default_token": "WAU9gXp3tHhK4Nns",
     "enable_mobile": true,
+    "force_non_spatial": false,
     "prefer_ac4": false,
     "fix_mqa": true
 }
@@ -135,10 +137,13 @@ the largest.
 
 `tv_secret`: Enter a valid TV client secret for the `tv_token`
 
-`mobile_token`: Enter a valid MOBILE client token
+`mobile_atmos_token`/`mobile_atmos_token`: Enter a valid MOBILE client token
 
 `enable_mobile`: Enables a second MOBILE session which needs a `username` and `password` (can be the same "TV" account)
-to archive Sony 360RA and Dolby AC-4 if available
+to archive Sony 360RA and Dolby AC-4 if available or allows `force_non_spatial` to work properly
+
+`force_non_spatial`: Forces a default Mobile session (`mobile_default_token` without support for Dolby Atmos at all,
+Sony 360RA will still be available tho) to get FLAC/AAC tracks
 
 `prefer_ac4`: If enabled and a mobile session is available (`enable_mobile` is set to `true`) this will ensure to get
 Dolby AC-4 on Dolby Atmos tracks
