@@ -14,7 +14,7 @@ from tqdm import tqdm
 from utils.models import *
 from utils.utils import sanitise_name, silentremove, download_to_temp, create_temp_filename, create_requests_session
 from .mqa_identifier_python.mqa_identifier import MqaIdentifier
-from .tidal_api import TidalTvSession, TidalApi, SessionStorage, TidalMobileSession, SessionType
+from .tidal_api import TidalTvSession, TidalApi, SessionStorage, TidalMobileSession, SessionType, TidalError
 
 module_information = ModuleInformation(
     service_name='Tidal',
@@ -349,7 +349,12 @@ class ModuleInterface:
 
         album_id = str(track_data.get('album').get('id'))
         # check if album is already in album cache, get it
-        album_data = data[album_id] if album_id in data else self.session.get_album(album_id)
+        try:
+            album_data = data[album_id] if album_id in data else self.session.get_album(album_id)
+        except TidalError as e:
+            # if an error occurs, catch it and set the album_data to an empty dict to catch it
+            self.print(f'Tidal: {e}, trying anyway', drop_level=1)
+            album_data = {}
 
         # check if album is only available in LOSSLESS and STEREO, so it switches to the MOBILE_DEFAULT which will
         # get FLACs faster
@@ -399,8 +404,6 @@ class ModuleInterface:
         else:
             # check if MQA
             if track_codec is CodecEnum.MQA and self.settings['fix_mqa']:
-                self.print(f'"fix_mqa" is enabled which is experimental! May be slower as normal download and could '
-                           f'not be working at all', drop_level=1)
                 # download the first chunk of the flac file to analyze it
                 temp_file_path = self.download_temp_header(manifest['urls'][0])
 
@@ -424,7 +427,8 @@ class ModuleInterface:
             album_id=album_id,
             artists=[a.get('name') for a in track_data.get('artists')],
             artist_id=track_data['artist'].get('id'),
-            release_year=track_data.get('streamStartDate')[:4],
+            release_year=track_data.get('streamStartDate')[:4] if track_data[
+                'streamStartDate'] else track_data.get('dateAdded')[:4],
             bit_depth=bit_depth,
             sample_rate=sample_rate,
             cover_url=self.generate_artwork_url(track_data['album'].get('cover'),
@@ -667,7 +671,7 @@ class ModuleInterface:
             }
 
         return Tags(
-            album_artist=album_data['artist'].get('name'),
+            album_artist=album_data.get('artist').get('name') if 'artist' in album_data else None,
             track_number=track_data.get('trackNumber'),
             total_tracks=album_data.get('numberOfTracks'),
             disc_number=track_data.get('volumeNumber'),
