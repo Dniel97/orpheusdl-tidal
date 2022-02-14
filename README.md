@@ -122,25 +122,41 @@ the largest.
 
 ### Tidal
 ```json
- "tidal": {
+{
     "tv_token": "7m7Ap0JC9j1cOM3n",
     "tv_secret": "vRAdA108tlvkJpTsGZS8rGZ7xTlbJ0qaZ2K9saEzsgY=",
-    "mobile_token": "dN2N95wCyEBTllu4",
+    "mobile_atmos_token": "dN2N95wCyEBTllu4",
+    "mobile_default_token": "WAU9gXp3tHhK4Nns",
     "enable_mobile": true,
-    "prefer_ac4": false
+    "force_non_spatial": false,
+    "prefer_ac4": false,
+    "fix_mqa": true
 }
 ```
 `tv_token`: Enter a valid TV client token
 
 `tv_secret`: Enter a valid TV client secret for the `tv_token`
 
-`mobile_token`: Enter a valid MOBILE client token
+`mobile_atmos_token`/`mobile_atmos_token`: Enter a valid MOBILE client token
 
 `enable_mobile`: Enables a second MOBILE session which needs a `username` and `password` (can be the same "TV" account)
-to archive Sony 360RA and Dolby AC-4 if available
+to archive Sony 360RA and Dolby AC-4 if available or allows `force_non_spatial` to work properly
+
+`force_non_spatial`: Forces a default Mobile session (`mobile_default_token` without support for Dolby Atmos at all,
+Sony 360RA will still be available tho) to get FLAC/AAC tracks
 
 `prefer_ac4`: If enabled and a mobile session is available (`enable_mobile` is set to `true`) this will ensure to get
 Dolby AC-4 on Dolby Atmos tracks
+
+`fix_mqa`: If enabled it will download the MQA file before the actual track and analyze the FLAC file to extract the 
+bitDepth and originalSampleRate. The tags `MQAENCODER`, `ENCODER` and `ORIGINALSAMPLERATE` are than added to the FLAC
+file in order to get properly detected.
+
+**Credits: [MQA_identifier](https://github.com/purpl3F0x/MQA_identifier) by
+[@purpl3F0x](https://github.com/purpl3F0x) and [mqaid](https://github.com/redsudo/mqaid) by
+[@redsudo](https://github.com/redsudo).**
+
+**NOTE: `fix_mqa` is enabled which is experimental! May be slower as normal download and could not be working at all**
 
 <!-- Contact -->
 ## Contact

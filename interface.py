@@ -2,6 +2,7 @@ import base64
 import json
 import logging
 import re
+from datetime import datetime
 from getpass import getpass
 from dataclasses import dataclass
 from shutil import copyfileobj
@@ -11,8 +12,9 @@ import ffmpeg
 from tqdm import tqdm
 
 from utils.models import *
-from utils.utils import sanitise_name, silentremove, download_to_temp, create_temp_filename
-from .tidal_api import TidalTvSession, TidalApi, SessionStorage, TidalMobileSession, SessionType
+from utils.utils import sanitise_name, silentremove, download_to_temp, create_temp_filename, create_requests_session
+from .mqa_identifier_python.mqa_identifier import MqaIdentifier
+from .tidal_api import TidalTvSession, TidalApi, SessionStorage, TidalMobileSession, SessionType, TidalError
 
 module_information = ModuleInformation(
     service_name='Tidal',
@@ -21,11 +23,14 @@ module_information = ModuleInformation(
     global_settings={
         'tv_token': '7m7Ap0JC9j1cOM3n',
         'tv_secret': 'vRAdA108tlvkJpTsGZS8rGZ7xTlbJ0qaZ2K9saEzsgY=',
-        'mobile_token': 'dN2N95wCyEBTllu4',
+        'mobile_atmos_token': 'dN2N95wCyEBTllu4',
+        'mobile_default_token': 'WAU9gXp3tHhK4Nns',
         'enable_mobile': True,
-        'prefer_ac4': False
+        'force_non_spatial': False,
+        'prefer_ac4': False,
+        'fix_mqa': True
     },
-    session_storage_variables=[SessionType.TV.name, SessionType.MOBILE.name],
+    session_storage_variables=['sessions'],
     netlocation_constant='tidal',
     test_url='https://tidal.com/browse/track/92265335'
 )
@@ -46,9 +51,7 @@ class ModuleInterface:
         self.oprinter = module_controller.printer_controller
         self.print = module_controller.printer_controller.oprint
         self.disable_subscription_check = module_controller.orpheus_options.disable_subscription_check
-        self.prefer_ac4 = module_controller.module_settings['prefer_ac4']
-
-        settings = module_controller.module_settings
+        self.settings = module_controller.module_settings
 
         # LOW = 96kbit/s AAC, HIGH = 320kbit/s AAC, LOSSLESS = 44.1/16 FLAC, HI_RES <= 48/24 FLAC with MQA
         self.quality_parse = {
@@ -59,12 +62,18 @@ class ModuleInterface:
             QualityEnum.HIFI: 'HI_RES'
         }
 
+        # save all the TidalSession objects
         sessions = {}
-        self.available_sessions = [SessionType.TV.name, SessionType.MOBILE.name]
+        self.available_sessions = [SessionType.TV.name, SessionType.MOBILE_DEFAULT.name, SessionType.MOBILE_ATMOS.name]
 
-        if settings['enable_mobile']:
-            storage: SessionStorage = module_controller.temporary_settings_controller.read(SessionType.MOBILE.name)
-            if not storage:
+        # load all saved sessions (TV, Mobile Atmos, Mobile Default)
+        saved_sessions = module_controller.temporary_settings_controller.read('sessions')
+        if not saved_sessions:
+            saved_sessions = {}
+
+        if self.settings['enable_mobile']:
+            # check all saved session for a session starting with "MOBILE"
+            if not any(session for session in saved_sessions.keys() if session[:6] == 'MOBILE'):
                 confirm = input(' "enable_mobile" is enabled but no MOBILE session was found. Do you want to create a '
                                 'MOBILE session (used for AC-4/360RA) [Y/n]? ')
                 if confirm.upper() == 'N':
@@ -72,36 +81,45 @@ class ModuleInterface:
         else:
             self.available_sessions = [SessionType.TV.name]
 
+        username, password = None, None
         for session_type in self.available_sessions:
-            storage: SessionStorage = module_controller.temporary_settings_controller.read(session_type)
-
+            # create all sessions with the needed API keys
             if session_type == SessionType.TV.name:
-                sessions[session_type] = TidalTvSession(settings['tv_token'], settings['tv_secret'])
+                sessions[session_type] = TidalTvSession(self.settings['tv_token'], self.settings['tv_secret'])
+            elif session_type == SessionType.MOBILE_ATMOS.name:
+                sessions[session_type] = TidalMobileSession(self.settings['mobile_atmos_token'])
             else:
-                sessions[session_type] = TidalMobileSession(settings['mobile_token'])
+                sessions[session_type] = TidalMobileSession(self.settings['mobile_default_token'])
 
-            if storage:
+            if session_type in saved_sessions:
                 logging.debug(f'Tidal: {session_type} session found, loading')
 
-                sessions[session_type].set_storage(storage)
+                # load the dictionary from the temporary_settings_controller inside the TidalSession class
+                sessions[session_type].set_storage(saved_sessions[session_type])
             else:
                 logging.debug(f'Tidal: No {session_type} session found, creating new one')
                 if session_type == SessionType.TV.name:
+                    self.print('Tidal: Creating a TV session')
                     sessions[session_type].auth()
                 else:
-                    self.print('Tidal: Enter your Tidal username and password:')
-                    username = input(' Username: ')
-                    password = getpass(' Password: ')
+                    if not username or not password:
+                        self.print('Tidal: Creating a Mobile session')
+                        self.print('Tidal: Enter your Tidal username and password:')
+                        username = input(' Username: ')
+                        password = getpass(' Password: ')
                     sessions[session_type].auth(username, password)
-                    self.print('Successfully logged in!')
+                    self.print(f'Successfully logged in, using {session_type} token!')
 
-                module_controller.temporary_settings_controller.set(session_type, sessions[session_type].get_storage())
+                # get the dict representation from the TidalSession object and save it into saved_session/loginstorage
+                saved_sessions[session_type] = sessions[session_type].get_storage()
+                module_controller.temporary_settings_controller.set('sessions', saved_sessions)
 
-            # Always try to refresh session
+            # always try to refresh session
             if not sessions[session_type].valid():
                 sessions[session_type].refresh()
                 # Save the refreshed session in the temporary settings
-                module_controller.temporary_settings_controller.set(session_type, sessions[session_type].get_storage())
+                saved_sessions[session_type] = sessions[session_type].get_storage()
+                module_controller.temporary_settings_controller.set('sessions', saved_sessions)
 
             while True:
                 # check for a valid subscription
@@ -117,16 +135,22 @@ class ModuleInterface:
 
                 # create a new session finally
                 if session_type == SessionType.TV.name:
+                    self.print('Tidal: Recreating a TV session')
                     sessions[session_type].auth()
                 else:
+                    self.print('Tidal: Recreating a Mobile session')
                     self.print('Tidal: Enter your Tidal username and password:')
                     username = input('Username: ')
                     password = getpass('Password: ')
                     sessions[session_type].auth(username, password)
 
-                module_controller.temporary_settings_controller.set(session_type,
-                                                                    sessions[session_type].get_storage())
+                saved_sessions[session_type] = sessions[session_type].get_storage()
+                module_controller.temporary_settings_controller.set('sessions', saved_sessions)
 
+        # reset username and password
+        username, password = None, None
+
+        # load the Tidal session with all saved sessions (TV, Mobile Atmos, Mobile Default)
         self.session: TidalApi = TidalApi(sessions)
 
     def check_subscription(self, subscription: str) -> bool:
@@ -155,34 +179,34 @@ class ModuleInterface:
         results = self.session.get_search_data(query, limit=limit)
 
         items = []
-        for i in results[query_type.name + 's']['items']:
+        for i in results[query_type.name + 's'].get('items'):
             if query_type is DownloadTypeEnum.artist:
-                name = i['name']
+                name = i.get('name')
                 artists = None
                 year = None
             elif query_type is DownloadTypeEnum.playlist:
-                name = i['title']
-                artists = [i['creator']['name']]
+                name = i.get('title')
+                artists = [i.get('creator').get('name')]
                 year = ""
             elif query_type is DownloadTypeEnum.track:
-                name = i['title']
-                artists = [j['name'] for j in i['artists']]
+                name = i.get('title')
+                artists = [j.get('name') for j in i.get('artists')]
                 # Getting the year from the album?
-                year = i['album']['releaseDate'][:4]
+                year = i.get('album').get('releaseDate')[:4]
             elif query_type is DownloadTypeEnum.album:
-                name = i['title']
-                artists = [j['name'] for j in i['artists']]
-                year = i['releaseDate'][:4]
+                name = i.get('title')
+                artists = [j.get('name') for j in i.get('artists')]
+                year = i.get('releaseDate')[:4]
             else:
                 raise Exception('Query type is invalid')
 
             additional = None
             if query_type is not DownloadTypeEnum.artist:
-                if i['audioModes'] == ['DOLBY_ATMOS']:
+                if i.get('audioModes') == ['DOLBY_ATMOS']:
                     additional = "Dolby Atmos"
-                elif i['audioModes'] == ['SONY_360RA']:
+                elif i.get('audioModes') == ['SONY_360RA']:
                     additional = "360 Reality Audio"
-                elif i['audioQuality'] == 'HI_RES':
+                elif i.get('audioQuality') == 'HI_RES':
                     additional = "MQA"
                 else:
                     additional = 'HiFi'
@@ -191,8 +215,8 @@ class ModuleInterface:
                 name=name,
                 artists=artists,
                 year=year,
-                result_id=str(i['id']),
-                explicit=bool(i['explicit']) if 'explicit' in i else None,
+                result_id=str(i.get('id')),
+                explicit=i.get('explicit'),
                 additional=[additional] if additional else None
             )
 
@@ -204,36 +228,39 @@ class ModuleInterface:
         playlist_data = self.session.get_playlist(playlist_id)
         playlist_tracks = self.session.get_playlist_items(playlist_id)
 
-        tracks = [track['item']['id'] for track in playlist_tracks['items'] if track['type'] == 'track']
+        tracks = [track.get('item').get('id') for track in playlist_tracks.get('items') if track.get('type') == 'track']
 
-        if 'name' in playlist_data['creator']:
-            creator_name = playlist_data['creator']['name']
-        elif playlist_data['creator']['id'] == 0:
+        if 'name' in playlist_data.get('creator'):
+            creator_name = playlist_data.get('creator').get('name')
+        elif playlist_data.get('creator').get('id') == 0:
             creator_name = 'TIDAL'
         else:
             creator_name = 'Unknown'
 
         return PlaylistInfo(
-            name=playlist_data['title'],
+            name=playlist_data.get('title'),
             creator=creator_name,
             tracks=tracks,
             # TODO: Use playlist creation date or lastUpdated?
-            release_year=playlist_data['created'][:4],
-            creator_id=playlist_data['creator']['id'],
-            cover_url=self.generate_artwork_url(playlist_data['squareImage'], size=self.cover_size, max_size=1080),
-            track_extra_kwargs={'data': {track['item']['id']: track['item'] for track in playlist_tracks['items']}}
+            release_year=playlist_data.get('created')[:4],
+            creator_id=playlist_data['creator'].get('id'),
+            cover_url=self.generate_artwork_url(playlist_data['squareImage'], size=self.cover_size,
+                                                max_size=1080) if playlist_data['squareImage'] else None,
+            track_extra_kwargs={
+                'data': {track.get('item').get('id'): track.get('item') for track in playlist_tracks.get('items')}
+            }
         )
 
     def get_artist_info(self, artist_id: str, get_credited_albums: bool) -> ArtistInfo:
         artist_data = self.session.get_artist(artist_id)
 
-        artist_albums = self.session.get_artist_albums(artist_id)['items']
-        artist_singles = self.session.get_artist_albums_ep_singles(artist_id)['items']
+        artist_albums = self.session.get_artist_albums(artist_id).get('items')
+        artist_singles = self.session.get_artist_albums_ep_singles(artist_id).get('items')
 
         # Only works with a mobile session, annoying, never do this again
         credit_albums = []
-        if get_credited_albums and SessionType.MOBILE.name in self.available_sessions:
-            self.session.default = SessionType.MOBILE
+        if get_credited_albums and SessionType.MOBILE_DEFAULT.name in self.available_sessions:
+            self.session.default = SessionType.MOBILE_DEFAULT
             credited_albums_page = self.session.get_page('contributor', params={'artistId': artist_id})
 
             # This is so retarded
@@ -247,15 +274,16 @@ class ModuleInterface:
                 print(f'Fetching {offset * 50}/{total_items}', end='\r')
                 items += self.session.get_page(more_items_link, params={'limit': 50, 'offset': offset * 50})['items']
 
-            credit_albums = [item['item']['album'] for item in items]
+            credit_albums = [item.get('item').get('album') for item in items]
             self.session.default = SessionType.TV
 
-        albums = [str(album['id']) for album in artist_albums + artist_singles + credit_albums]
+        # use set to filter out duplicate album ids
+        albums = {str(album.get('id')) for album in artist_albums + artist_singles + credit_albums}
 
         return ArtistInfo(
-            name=artist_data['name'],
-            albums=albums,
-            album_extra_kwargs={'data': {str(album['id']): album for album in
+            name=artist_data.get('name'),
+            albums=list(albums),
+            album_extra_kwargs={'data': {str(album.get('id')): album for album in
                                          artist_albums + artist_singles + credit_albums}}
         )
 
@@ -266,38 +294,48 @@ class ModuleInterface:
 
         album_data = data[album_id] if album_id in data else self.session.get_album(album_id)
 
-        # get all album tracks with corresponding credits
-        tracks_data = self.session.get_album_contributors(album_id)
+        # get all album tracks with corresponding credits with a limit of 100
+        limit = 100
+        tracks_data = self.session.get_album_contributors(album_id, limit=limit)
+        total_tracks = tracks_data.get('totalNumberOfItems')
+
+        # round total_tracks to the next 100 and loop over the offset, that's hideous
+        for offset in range(limit, ((total_tracks // limit) + 1) * limit, limit):
+            # fetch the new album tracks with the given offset
+            track_items = self.session.get_album_contributors(album_id, offset=offset, limit=limit)
+            # append those tracks to the album_data
+            tracks_data['items'] += track_items
 
         # add the track contributors to a new list called 'credits'
         cache = {'data': {}}
-        for track in tracks_data['items']:
-            track['item'].update({'credits': track['credits']})
-            cache['data'][str(track['item']['id'])] = track['item']
+        for track in tracks_data.get('items'):
+            track.get('item').update({'credits': track.get('credits')})
+            cache.get('data')[str(track.get('item').get('id'))] = track.get('item')
 
-        tracks = [str(track['item']['id']) for track in tracks_data['items']]
+        # filter out video clips
+        tracks = [str(track['item']['id']) for track in tracks_data.get('items') if track.get('type') == 'track']
 
-        if album_data['audioModes'] == ['DOLBY_ATMOS']:
-            quality = 'Dolby Atmos'
-        elif album_data['audioModes'] == ['SONY_360RA']:
-            quality = '360'
-        elif album_data['audioQuality'] == 'HI_RES':
-            quality = 'M'
-        else:
-            quality = None
+        quality = None
+        if 'audioModes' in album_data:
+            if album_data['audioModes'] == ['DOLBY_ATMOS']:
+                quality = 'Dolby Atmos'
+            elif album_data['audioModes'] == ['SONY_360RA']:
+                quality = '360'
+            elif album_data['audioQuality'] == 'HI_RES':
+                quality = 'M'
 
         return AlbumInfo(
-            name=album_data['title'],
-            release_year=album_data['releaseDate'][:4],
-            explicit=album_data['explicit'],
+            name=album_data.get('title'),
+            release_year=album_data.get('releaseDate')[:4],
+            explicit=album_data.get('explicit'),
             quality=quality,
-            upc=album_data['upc'],
-            all_track_cover_jpg_url=self.generate_artwork_url(album_data['cover'],
-                                                              size=self.cover_size) if album_data['cover'] else None,
-            animated_cover_url=self.generate_animated_artwork_url(album_data['videoCover']) if album_data[
-                'videoCover'] else None,
-            artist=album_data['artist']['name'],
-            artist_id=album_data['artist']['id'],
+            upc=album_data.get('upc'),
+            cover_url=self.generate_artwork_url(album_data.get('cover'),
+                                                size=self.cover_size) if album_data.get('cover') else None,
+            animated_cover_url=self.generate_animated_artwork_url(album_data.get('videoCover')) if album_data.get(
+                'videoCover') else None,
+            artist=album_data.get('artist').get('name'),
+            artist_id=album_data.get('artist').get('id'),
             tracks=tracks,
             track_extra_kwargs=cache
         )
@@ -309,15 +347,25 @@ class ModuleInterface:
 
         track_data = data[track_id] if track_id in data else self.session.get_track(track_id)
 
-        album_id = str(track_data['album']['id'])
+        album_id = str(track_data.get('album').get('id'))
         # check if album is already in album cache, get it
-        album_data = data[album_id] if album_id in data else self.session.get_album(album_id)
+        try:
+            album_data = data[album_id] if album_id in data else self.session.get_album(album_id)
+        except TidalError as e:
+            # if an error occurs, catch it and set the album_data to an empty dict to catch it
+            self.print(f'Tidal: {e}, trying anyway', drop_level=1)
+            album_data = {}
 
-        # get Sony 360RA and switch to mobile session
-        if (track_data['audioModes'] == ['SONY_360RA']
-            or (track_data['audioModes'] == ['DOLBY_ATMOS'] and self.prefer_ac4)) \
-                and SessionType.MOBILE.name in self.available_sessions:
-            self.session.default = SessionType.MOBILE
+        # check if album is only available in LOSSLESS and STEREO, so it switches to the MOBILE_DEFAULT which will
+        # get FLACs faster
+        if (self.settings['force_non_spatial'] or (
+                album_data.get('audioQuality') == 'LOSSLESS' and album_data.get('audioModes') == ['STEREO'])) and \
+            SessionType.MOBILE_DEFAULT.name in self.available_sessions:
+            self.session.default = SessionType.MOBILE_DEFAULT
+        elif (track_data.get('audioModes') == ['SONY_360RA']
+              or (track_data.get('audioModes') == ['DOLBY_ATMOS'] and self.settings['prefer_ac4'])) \
+                and SessionType.MOBILE_ATMOS.name in self.available_sessions:
+            self.session.default = SessionType.MOBILE_ATMOS
         else:
             self.session.default = SessionType.TV
 
@@ -347,27 +395,46 @@ class ModuleInterface:
                     manifest = json.loads(base64.b64decode(stream_data['manifest']))
                     track_codec = CodecEnum['AAC' if 'mp4a' in manifest['codecs'] else manifest['codecs'].upper()]
 
-        track_name = track_data["title"]
-        track_name += f' ({track_data["version"]})' if track_data['version'] else ''
+        track_name = track_data.get('title')
+        track_name += f' ({track_data.get("version")})' if track_data.get("version") else ''
 
+        mqa_file = None
         if audio_track:
             download_args = {'audio_track': audio_track}
         else:
+            # check if MQA
+            if track_codec is CodecEnum.MQA and self.settings['fix_mqa']:
+                # download the first chunk of the flac file to analyze it
+                temp_file_path = self.download_temp_header(manifest['urls'][0])
+
+                # detect MQA file
+                mqa_file = MqaIdentifier(temp_file_path)
+
+            # add the file to download_args
             download_args = {'file_url': manifest['urls'][0]}
+
+        bit_depth = 24 if track_codec in [CodecEnum.EAC3, CodecEnum.MHA1] else 16
+        sample_rate = 48 if track_codec in [CodecEnum.EAC3, CodecEnum.MHA1, CodecEnum.AC4] else 44.1
+
+        # now set everything for MQA
+        if mqa_file is not None and mqa_file.is_mqa:
+            bit_depth = mqa_file.bit_depth
+            sample_rate = mqa_file.get_original_sample_rate()
 
         track_info = TrackInfo(
             name=track_name,
-            album=album_data['title'],
+            album=album_data.get('title'),
             album_id=album_id,
-            artists=[a['name'] for a in track_data['artists']],
-            artist_id=track_data['artist']['id'],
-            release_year=track_data['streamStartDate'][:4],
-            # TODO: Get correct bit_depth and sample_rate for MQA, even possible?
-            bit_depth=24 if track_codec in [CodecEnum.MQA, CodecEnum.EAC3, CodecEnum.MHA1] else 16,
-            sample_rate=48 if track_codec in [CodecEnum.EAC3, CodecEnum.MHA1, CodecEnum.AC4] else 44.1,
-            cover_url=self.generate_artwork_url(track_data['album']['cover'], size=self.cover_size),
-            explicit=track_data['explicit'] if 'explicit' in track_data else None,
-            tags=self.convert_tags(track_data, album_data),
+            artists=[a.get('name') for a in track_data.get('artists')],
+            artist_id=track_data['artist'].get('id'),
+            release_year=track_data.get('streamStartDate')[:4] if track_data[
+                'streamStartDate'] else track_data.get('dateAdded')[:4],
+            bit_depth=bit_depth,
+            sample_rate=sample_rate,
+            cover_url=self.generate_artwork_url(track_data['album'].get('cover'),
+                                                size=self.cover_size) if track_data['album'].get('cover') else None,
+            explicit=track_data.get('explicit'),
+            tags=self.convert_tags(track_data, album_data, mqa_file),
             codec=track_codec,
             download_extra_kwargs=download_args,
             lyrics_extra_kwargs={'track_data': track_data},
@@ -379,6 +446,24 @@ class ModuleInterface:
             track_info.error = 'Spatial codecs are disabled, if you want to download it, set "spatial_codecs": true'
 
         return track_info
+
+    @staticmethod
+    def download_temp_header(file_url: str, chunk_size: int = 16384) -> str:
+        # create flac temp_location
+        temp_location = create_temp_filename() + '.flac'
+
+        # create session and download the file to the temp_location
+        r_session = create_requests_session()
+
+        r = r_session.get(file_url, stream=True, verify=False)
+        with open(temp_location, 'wb') as f:
+            # only download the first chunk_size bytes
+            for chunk in r.iter_content(chunk_size=chunk_size):
+                if chunk:  # filter out keep-alive new chunks
+                    f.write(chunk)
+                    break
+
+        return temp_location
 
     @staticmethod
     def parse_mpd(xml: bytes) -> list:
@@ -441,8 +526,11 @@ class ModuleInterface:
 
         return tracks
 
-    def get_track_download(self, file_url: str = None, audio_track: AudioTrack = None) -> TrackDownloadInfo:
-        # no MPEG-DASH, just a simple file
+    def get_track_download(self, file_url: str = None, audio_track: AudioTrack = None) \
+            -> TrackDownloadInfo:
+        # only file_url or audio_track at a time
+
+        # MHA1, EC-3 or MQA
         if file_url:
             return TrackDownloadInfo(download_type=DownloadEnum.URL, file_url=file_url)
 
@@ -462,6 +550,9 @@ class ModuleInterface:
         temp_locations = []
         for download_url in bar:
             temp_locations.append(download_to_temp(download_url, extension='mp4'))
+
+        # needed for bar indent
+        bar.close()
 
         # concatenated/Merged .mp4 file
         merged_temp_location = create_temp_filename() + '.mp4'
@@ -503,38 +594,34 @@ class ModuleInterface:
             data = {}
 
         track_data = data[track_id] if track_id in data else self.session.get_track(track_id)
-        cover_id = track_data['album']['cover']
+        cover_id = track_data['album'].get('cover')
 
         # Tidal don't support PNG, so it will always get JPG
         cover_url = self.generate_artwork_url(cover_id, size=cover_options.resolution)
         return CoverInfo(url=cover_url, file_type=ImageFileTypeEnum.jpg)
 
     def get_track_lyrics(self, track_id: str, track_data: dict) -> LyricsInfo:
-        embedded, synced = None, None
-
+        # get lyrics data for current track id
         lyrics_data = self.session.get_lyrics(track_id)
 
         if 'error' in lyrics_data:
             # search for title and artist to find a matching track (non Atmos)
             results = self.search(
                 DownloadTypeEnum.track,
-                f'{track_data["title"]} {"".join(a["name"] for a in track_data["artists"])}',
+                f'{track_data.get("title")} {"".join(a.get("name") for a in track_data.get("artists"))}',
                 limit=10)
 
             # check every result to find a matching result
             best_tracks = [r.result_id for r in results
-                           if r.name == track_data['title'] and
-                           r.artists[0] == track_data['artist']['name'] and
+                           if r.name == track_data.get('title') and
+                           r.artists[0] == track_data.get('artist').get('name') and
                            'Dolby Atmos' not in r.additional]
 
             # retrieve the lyrics for the first one, otherwise return empty dict
             lyrics_data = self.session.get_lyrics(best_tracks[0]) if len(best_tracks) > 0 else {}
 
-        if 'lyrics' in lyrics_data:
-            embedded = lyrics_data['lyrics']
-
-        if 'subtitles' in lyrics_data:
-            synced = lyrics_data['subtitles']
+        embedded = lyrics_data.get('lyrics')
+        synced = lyrics_data.get('subtitles')
 
         return LyricsInfo(
             embedded=embedded,
@@ -552,17 +639,17 @@ class ModuleInterface:
             track_contributors = data[track_id]
 
             for contributor in track_contributors:
-                credits_dict[contributor['type']] = [c['name'] for c in contributor['contributors']]
+                credits_dict[contributor.get('type')] = [c.get('name') for c in contributor.get('contributors')]
         else:
-            track_contributors = self.session.get_track_contributors(track_id)['items']
+            track_contributors = self.session.get_track_contributors(track_id).get('items')
 
             if len(track_contributors) > 0:
                 for contributor in track_contributors:
                     # check if the dict contains no list, create one
-                    if contributor['role'] not in credits_dict:
-                        credits_dict[contributor['role']] = []
+                    if contributor.get('role') not in credits_dict:
+                        credits_dict[contributor.get('role')] = []
 
-                    credits_dict[contributor['role']].append(contributor['name'])
+                    credits_dict[contributor.get('role')].append(contributor.get('name'))
 
         if len(credits_dict) > 0:
             # convert the dictionary back to a list of CreditsInfo
@@ -570,20 +657,30 @@ class ModuleInterface:
         return None
 
     @staticmethod
-    def convert_tags(track_data: dict, album_data: dict) -> Tags:
-        track_name = track_data["title"]
-        track_name += f' ({track_data["version"]})' if track_data['version'] else ''
+    def convert_tags(track_data: dict, album_data: dict, mqa_file: MqaIdentifier = None) -> Tags:
+        track_name = track_data.get('title')
+        track_name += f' ({track_data.get("version")})' if track_data.get('version') else ''
+
+        extra_tags = {}
+        if mqa_file is not None:
+            encoder_time = datetime.now().strftime("%b %d %Y %H:%M:%S")
+            extra_tags = {
+                'ENCODER': f'MQAEncode v1.1, 2.4.0+0 (278f5dd), E24F1DE5-32F1-4930-8197-24954EB9D6F4, {encoder_time}',
+                'MQAENCODER': f'MQAEncode v1.1, 2.4.0+0 (278f5dd), E24F1DE5-32F1-4930-8197-24954EB9D6F4, {encoder_time}',
+                'ORIGINALSAMPLERATE': str(mqa_file.original_sample_rate)
+            }
 
         return Tags(
-            album_artist=album_data['artist']['name'],
-            track_number=track_data['trackNumber'],
-            total_tracks=album_data['numberOfTracks'],
-            disc_number=track_data['volumeNumber'],
-            total_discs=album_data['numberOfVolumes'],
-            isrc=track_data['isrc'],
-            upc=album_data['upc'],
-            release_date=album_data['releaseDate'] if 'releaseDate' in album_data else None,
-            copyright=track_data['copyright'],
-            replay_gain=track_data['replayGain'],
-            replay_peak=track_data['peak']
+            album_artist=album_data.get('artist').get('name') if 'artist' in album_data else None,
+            track_number=track_data.get('trackNumber'),
+            total_tracks=album_data.get('numberOfTracks'),
+            disc_number=track_data.get('volumeNumber'),
+            total_discs=album_data.get('numberOfVolumes'),
+            isrc=track_data.get('isrc'),
+            upc=album_data.get('upc'),
+            release_date=album_data.get('releaseDate'),
+            copyright=track_data.get('copyright'),
+            replay_gain=track_data.get('replayGain'),
+            replay_peak=track_data.get('peak'),
+            extra_tags=extra_tags
         )

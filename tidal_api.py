@@ -50,7 +50,8 @@ class TidalError(Exception):
 
 class SessionType(Enum):
     TV = auto()
-    MOBILE = auto()
+    MOBILE_ATMOS = auto()
+    MOBILE_DEFAULT = auto()
 
 
 class TidalApi(object):
@@ -182,11 +183,11 @@ class TidalApi(object):
     def get_track_contributors(self, track_id):
         return self._get('tracks/' + str(track_id) + '/contributors')
 
-    def get_album_contributors(self, album_id):
+    def get_album_contributors(self, album_id, offset: int = 0, limit: int = 100):
         return self._get('albums/' + album_id + '/items/credits', params={
             'replace': True,
-            'offset': 0,
-            'limit': 100,
+            'offset': offset,
+            'limit': limit,
             'includeContributors': True
         })
 
@@ -315,21 +316,21 @@ class TidalSession(ABC):
         self.user_id = None
         self.country_code = None
 
-    def set_storage(self, storage: SessionStorage):
-        self.access_token = storage.access_token
-        self.refresh_token = storage.refresh_token
-        self.expires = storage.expires
-        self.user_id = storage.user_id
-        self.country_code = storage.country_code
+    def set_storage(self, storage: dict):
+        self.access_token = storage.get('access_token')
+        self.refresh_token = storage.get('refresh_token')
+        self.expires = storage.get('expires')
+        self.user_id = storage.get('user_id')
+        self.country_code = storage.get('country_code')
 
-    def get_storage(self) -> SessionStorage:
-        return SessionStorage(
-            self.access_token,
-            self.refresh_token,
-            self.expires,
-            self.user_id,
-            self.country_code
-        )
+    def get_storage(self) -> dict:
+        return {
+            'access_token': self.access_token,
+            'refresh_token': self.refresh_token,
+            'expires': self.expires,
+            'user_id': self.user_id,
+            'country_code': self.country_code
+        }
 
     def get_subscription(self) -> str:
         if self.access_token:
