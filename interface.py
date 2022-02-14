@@ -283,8 +283,7 @@ class ModuleInterface:
         return ArtistInfo(
             name=artist_data.get('name'),
             albums=list(albums),
-            album_extra_kwargs={'data': {str(album.get('id')): album for album in
-                                         artist_albums + artist_singles + credit_albums}}
+            album_extra_kwargs={'data': {str(album.get('id')): album for album in artist_albums + artist_singles}}
         )
 
     def get_album_info(self, album_id: str, data=None) -> AlbumInfo:
