@@ -2,19 +2,19 @@ import base64
 import json
 import logging
 import re
+import ffmpeg
+
 from datetime import datetime
 from getpass import getpass
 from dataclasses import dataclass
 from shutil import copyfileobj
 from xml.etree import ElementTree
-
-import ffmpeg
 from tqdm import tqdm
 
 from utils.models import *
 from utils.utils import sanitise_name, silentremove, download_to_temp, create_temp_filename, create_requests_session
 from .mqa_identifier_python.mqa_identifier import MqaIdentifier
-from .tidal_api import TidalTvSession, TidalApi, SessionStorage, TidalMobileSession, SessionType, TidalError
+from .tidal_api import TidalTvSession, TidalApi, TidalMobileSession, SessionType, TidalError
 
 module_information = ModuleInformation(
     service_name='Tidal',
@@ -599,7 +599,10 @@ class ModuleInterface:
         cover_url = self.generate_artwork_url(cover_id, size=cover_options.resolution)
         return CoverInfo(url=cover_url, file_type=ImageFileTypeEnum.jpg)
 
-    def get_track_lyrics(self, track_id: str, track_data: dict) -> LyricsInfo:
+    def get_track_lyrics(self, track_id: str, track_data: dict = None) -> LyricsInfo:
+        if not track_data:
+            track_data = {}
+
         # get lyrics data for current track id
         lyrics_data = self.session.get_lyrics(track_id)
 
