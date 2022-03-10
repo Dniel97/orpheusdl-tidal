@@ -2,19 +2,19 @@ import base64
 import json
 import logging
 import re
+import ffmpeg
+
 from datetime import datetime
 from getpass import getpass
 from dataclasses import dataclass
 from shutil import copyfileobj
 from xml.etree import ElementTree
-
-import ffmpeg
 from tqdm import tqdm
 
 from utils.models import *
 from utils.utils import sanitise_name, silentremove, download_to_temp, create_temp_filename, create_requests_session
 from .mqa_identifier_python.mqa_identifier import MqaIdentifier
-from .tidal_api import TidalTvSession, TidalApi, SessionStorage, TidalMobileSession, SessionType, TidalError
+from .tidal_api import TidalTvSession, TidalApi, TidalMobileSession, SessionType, TidalError
 
 module_information = ModuleInformation(
     service_name='Tidal',
@@ -185,20 +185,28 @@ class ModuleInterface:
                 artists = None
                 year = None
             elif query_type is DownloadTypeEnum.playlist:
-                name = i.get('title')
-                artists = [i.get('creator').get('name')]
-                year = ""
+                if 'name' in i.get('creator'):
+                    artists = [i.get('creator').get('name')]
+                elif i.get('type') == 'EDITORIAL':
+                    artists = ['TIDAL']
+                else:
+                    artists = ['Unknown']
+
+                # TODO: Use playlist creation date or lastUpdated?
+                year = i.get('created')[:4]
             elif query_type is DownloadTypeEnum.track:
-                name = i.get('title')
                 artists = [j.get('name') for j in i.get('artists')]
                 # Getting the year from the album?
                 year = i.get('album').get('releaseDate')[:4]
             elif query_type is DownloadTypeEnum.album:
-                name = i.get('title')
                 artists = [j.get('name') for j in i.get('artists')]
                 year = i.get('releaseDate')[:4]
             else:
                 raise Exception('Query type is invalid')
+
+            if query_type is not DownloadTypeEnum.artist:
+                name = i.get('title')
+                name += f' ({i.get("version")})' if i.get("version") else ''
 
             additional = None
             if query_type is not DownloadTypeEnum.artist:
@@ -215,7 +223,7 @@ class ModuleInterface:
                 name=name,
                 artists=artists,
                 year=year,
-                result_id=str(i.get('id')),
+                result_id=str(i.get('id')) if query_type is not DownloadTypeEnum.playlist else i.get('uuid'),
                 explicit=i.get('explicit'),
                 additional=[additional] if additional else None
             )
@@ -232,7 +240,7 @@ class ModuleInterface:
 
         if 'name' in playlist_data.get('creator'):
             creator_name = playlist_data.get('creator').get('name')
-        elif playlist_data.get('creator').get('id') == 0:
+        elif playlist_data.get('type') == 'EDITORIAL':
             creator_name = 'TIDAL'
         else:
             creator_name = 'Unknown'
@@ -599,11 +607,14 @@ class ModuleInterface:
         cover_url = self.generate_artwork_url(cover_id, size=cover_options.resolution)
         return CoverInfo(url=cover_url, file_type=ImageFileTypeEnum.jpg)
 
-    def get_track_lyrics(self, track_id: str, track_data: dict) -> LyricsInfo:
+    def get_track_lyrics(self, track_id: str, track_data: dict = None) -> LyricsInfo:
+        if not track_data:
+            track_data = {}
+
         # get lyrics data for current track id
         lyrics_data = self.session.get_lyrics(track_id)
 
-        if 'error' in lyrics_data:
+        if 'error' in lyrics_data and track_data:
             # search for title and artist to find a matching track (non Atmos)
             results = self.search(
                 DownloadTypeEnum.track,
