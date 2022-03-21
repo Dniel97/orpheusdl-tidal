@@ -366,8 +366,8 @@ class ModuleInterface:
         # check if album is only available in LOSSLESS and STEREO, so it switches to the MOBILE_DEFAULT which will
         # get FLACs faster
         if (self.settings['force_non_spatial'] or (
-                album_data.get('audioQuality') == 'LOSSLESS' and album_data.get('audioModes') == ['STEREO'])) and \
-            SessionType.MOBILE_DEFAULT.name in self.available_sessions:
+                (quality_tier is QualityEnum.LOSSLESS or album_data.get('audioQuality') == 'LOSSLESS')
+                and album_data.get('audioModes') == ['STEREO'])) and SessionType.MOBILE_DEFAULT.name in self.available_sessions:
             self.session.default = SessionType.MOBILE_DEFAULT
         elif (track_data.get('audioModes') == ['SONY_360RA']
               or (track_data.get('audioModes') == ['DOLBY_ATMOS'] and self.settings['prefer_ac4'])) \
@@ -423,6 +423,18 @@ class ModuleInterface:
         bit_depth = 24 if track_codec in [CodecEnum.EAC3, CodecEnum.MHA1] else 16
         sample_rate = 48 if track_codec in [CodecEnum.EAC3, CodecEnum.MHA1, CodecEnum.AC4] else 44.1
 
+        # fallback bitrate
+        bitrate = {
+            'LOW': 96,
+            'HIGH': 320,
+            'LOSSLESS': 1411,
+            'HI_RES': None
+        }[stream_data['audioQuality']]
+
+        # more precise bitrate tidal uses MPEG-DASH
+        if audio_track:
+            bitrate = audio_track.bitrate // 1000
+
         # now set everything for MQA
         if mqa_file is not None and mqa_file.is_mqa:
             bit_depth = mqa_file.bit_depth
@@ -438,6 +450,7 @@ class ModuleInterface:
                 'streamStartDate'] else track_data.get('dateAdded')[:4],
             bit_depth=bit_depth,
             sample_rate=sample_rate,
+            bitrate=bitrate,
             cover_url=self.generate_artwork_url(track_data['album'].get('cover'),
                                                 size=self.cover_size) if track_data['album'].get('cover') else None,
             explicit=track_data.get('explicit'),
