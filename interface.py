@@ -366,8 +366,8 @@ class ModuleInterface:
         # check if album is only available in LOSSLESS and STEREO, so it switches to the MOBILE_DEFAULT which will
         # get FLACs faster
         if (self.settings['force_non_spatial'] or (
-                quality_tier is QualityEnum.LOSSLESS and album_data.get('audioModes') == ['STEREO'])) and \
-            SessionType.MOBILE_DEFAULT.name in self.available_sessions:
+                (quality_tier is QualityEnum.LOSSLESS or album_data.get('audioQuality') == 'LOSSLESS')
+                and album_data.get('audioModes') == ['STEREO'])) and SessionType.MOBILE_DEFAULT.name in self.available_sessions:
             self.session.default = SessionType.MOBILE_DEFAULT
         elif (track_data.get('audioModes') == ['SONY_360RA']
               or (track_data.get('audioModes') == ['DOLBY_ATMOS'] and self.settings['prefer_ac4'])) \
