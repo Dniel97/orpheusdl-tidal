@@ -272,18 +272,19 @@ class ModuleInterface:
             credited_albums_page = self.session.get_page('contributor', params={'artistId': artist_id})
 
             # This is so retarded
-            page_list = credited_albums_page['rows'][-1]['modules'][0]['pagedList']
-            total_items = page_list['totalNumberOfItems']
-            more_items_link = page_list['dataApiPath'][6:]
+            page_list = credited_albums_page['rows'][-1]['modules'][0].get('pagedList')
+            if page_list:
+                total_items = page_list['totalNumberOfItems']
+                more_items_link = page_list['dataApiPath'][6:]
 
-            # Now fetch all the found total_items
-            items = []
-            for offset in range(0, total_items // 50 + 1):
-                print(f'Fetching {offset * 50}/{total_items}', end='\r')
-                items += self.session.get_page(more_items_link, params={'limit': 50, 'offset': offset * 50})['items']
+                # Now fetch all the found total_items
+                items = []
+                for offset in range(0, total_items // 50 + 1):
+                    print(f'Fetching {offset * 50}/{total_items}', end='\r')
+                    items += self.session.get_page(more_items_link, params={'limit': 50, 'offset': offset * 50})['items']
 
-            credit_albums = [item.get('item').get('album') for item in items]
-            self.session.default = SessionType.TV
+                credit_albums = [item.get('item').get('album') for item in items]
+                self.session.default = SessionType.TV
 
         # use set to filter out duplicate album ids
         albums = {str(album.get('id')) for album in artist_albums + artist_singles + credit_albums}
