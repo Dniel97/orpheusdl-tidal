@@ -14,7 +14,7 @@ from tqdm import tqdm
 from utils.models import *
 from utils.utils import sanitise_name, silentremove, download_to_temp, create_temp_filename, create_requests_session
 from .mqa_identifier_python.mqa_identifier import MqaIdentifier
-from .tidal_api import TidalTvSession, TidalApi, TidalMobileSession, SessionType, TidalError
+from .tidal_api import TidalTvSession, TidalApi, TidalMobileSession, SessionType, TidalError, TidalRequestError
 
 module_information = ModuleInformation(
     service_name='Tidal',
@@ -361,7 +361,7 @@ class ModuleInterface:
             album_data = data[album_id] if album_id in data else self.session.get_album(album_id)
         except TidalError as e:
             # if an error occurs, catch it and set the album_data to an empty dict to catch it
-            self.print(f'Tidal: {e}, trying anyway', drop_level=1)
+            self.print(f'Tidal: {e} Trying anyway', drop_level=1)
             album_data = {}
 
         # check if album is only available in LOSSLESS and STEREO, so it switches to the MOBILE_DEFAULT which will
@@ -377,60 +377,66 @@ class ModuleInterface:
         else:
             self.session.default = SessionType.TV
 
-        stream_data = self.session.get_stream_url(track_id, self.quality_parse[quality_tier])
-        # only needed for MPEG-DASH
-        audio_track = None
+        # define all default values in case the stream_data is None (region locked)
+        audio_track, mqa_file, track_codec, bitrate, download_args, error = None, None, CodecEnum.FLAC, None, None, None
 
-        if stream_data['manifestMimeType'] == 'application/dash+xml':
-            manifest = base64.b64decode(stream_data['manifest'])
-            audio_track = self.parse_mpd(manifest)[0]  # Only one AudioTrack?
-            track_codec = audio_track.codec
-        else:
-            manifest = json.loads(base64.b64decode(stream_data['manifest']))
-            track_codec = CodecEnum['AAC' if 'mp4a' in manifest['codecs'] else manifest['codecs'].upper()]
+        try:
+            stream_data = self.session.get_stream_url(track_id, self.quality_parse[quality_tier])
+        except TidalRequestError as e:
+            error = e
+            # definitely region locked
+            if 'Asset is not ready for playback' in str(e):
+                error = f'Track [{track_id}] is not available in your region'
+            stream_data = None
 
-        if not codec_data[track_codec].spatial:
-            if not codec_options.proprietary_codecs and codec_data[track_codec].proprietary:
-                self.print(f'Proprietary codecs are disabled, if you want to download {track_codec.name}, '
-                           f'set "proprietary_codecs": true', drop_level=1)
-                stream_data = self.session.get_stream_url(track_id, 'LOSSLESS')
+        if stream_data is not None:
+            if stream_data['manifestMimeType'] == 'application/dash+xml':
+                manifest = base64.b64decode(stream_data['manifest'])
+                audio_track = self.parse_mpd(manifest)[0]  # Only one AudioTrack?
+                track_codec = audio_track.codec
+            else:
+                manifest = json.loads(base64.b64decode(stream_data['manifest']))
+                track_codec = CodecEnum['AAC' if 'mp4a' in manifest['codecs'] else manifest['codecs'].upper()]
 
-                if stream_data['manifestMimeType'] == 'application/dash+xml':
-                    manifest = base64.b64decode(stream_data['manifest'])
-                    audio_track = self.parse_mpd(manifest)[0]  # Only one AudioTrack?
-                    track_codec = audio_track.codec
-                else:
-                    manifest = json.loads(base64.b64decode(stream_data['manifest']))
-                    track_codec = CodecEnum['AAC' if 'mp4a' in manifest['codecs'] else manifest['codecs'].upper()]
+            if not codec_data[track_codec].spatial:
+                if not codec_options.proprietary_codecs and codec_data[track_codec].proprietary:
+                    self.print(f'Proprietary codecs are disabled, if you want to download {track_codec.name}, '
+                               f'set "proprietary_codecs": true', drop_level=1)
+                    stream_data = self.session.get_stream_url(track_id, 'LOSSLESS')
 
-        track_name = track_data.get('title')
-        track_name += f' ({track_data.get("version")})' if track_data.get("version") else ''
+                    if stream_data['manifestMimeType'] == 'application/dash+xml':
+                        manifest = base64.b64decode(stream_data['manifest'])
+                        audio_track = self.parse_mpd(manifest)[0]  # Only one AudioTrack?
+                        track_codec = audio_track.codec
+                    else:
+                        manifest = json.loads(base64.b64decode(stream_data['manifest']))
+                        track_codec = CodecEnum['AAC' if 'mp4a' in manifest['codecs'] else manifest['codecs'].upper()]
 
-        mqa_file = None
-        if audio_track:
-            download_args = {'audio_track': audio_track}
-        else:
-            # check if MQA
-            if track_codec is CodecEnum.MQA and self.settings['fix_mqa']:
-                # download the first chunk of the flac file to analyze it
-                temp_file_path = self.download_temp_header(manifest['urls'][0])
+            if audio_track:
+                download_args = {'audio_track': audio_track}
+            else:
+                # check if MQA
+                if track_codec is CodecEnum.MQA and self.settings['fix_mqa']:
+                    # download the first chunk of the flac file to analyze it
+                    temp_file_path = self.download_temp_header(manifest['urls'][0])
 
-                # detect MQA file
-                mqa_file = MqaIdentifier(temp_file_path)
+                    # detect MQA file
+                    mqa_file = MqaIdentifier(temp_file_path)
 
-            # add the file to download_args
-            download_args = {'file_url': manifest['urls'][0]}
+                # add the file to download_args
+                download_args = {'file_url': manifest['urls'][0]}
 
         bit_depth = 24 if track_codec in [CodecEnum.EAC3, CodecEnum.MHA1] else 16
         sample_rate = 48 if track_codec in [CodecEnum.EAC3, CodecEnum.MHA1, CodecEnum.AC4] else 44.1
 
-        # fallback bitrate
-        bitrate = {
-            'LOW': 96,
-            'HIGH': 320,
-            'LOSSLESS': 1411,
-            'HI_RES': None
-        }[stream_data['audioQuality']]
+        if stream_data:
+            # fallback bitrate
+            bitrate = {
+                'LOW': 96,
+                'HIGH': 320,
+                'LOSSLESS': 1411,
+                'HI_RES': None
+            }[stream_data['audioQuality']]
 
         # more precise bitrate tidal uses MPEG-DASH
         if audio_track:
@@ -440,6 +446,9 @@ class ModuleInterface:
         if mqa_file is not None and mqa_file.is_mqa:
             bit_depth = mqa_file.bit_depth
             sample_rate = mqa_file.get_original_sample_rate()
+
+        track_name = track_data.get('title')
+        track_name += f' ({track_data.get("version")})' if track_data.get("version") else ''
 
         track_info = TrackInfo(
             name=track_name,
@@ -464,7 +473,11 @@ class ModuleInterface:
         )
 
         if not codec_options.spatial_codecs and codec_data[track_codec].spatial:
-            track_info.error = 'Spatial codecs are disabled, if you want to download it, set "spatial_codecs": true'
+            track_info.error = 'Info: Spatial codecs are disabled, if you want to download it, set "spatial_codecs": ' \
+                               'true '
+
+        if not stream_data:
+            track_info.error = f'Error: {error}'
 
         return track_info
 
