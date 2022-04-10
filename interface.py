@@ -210,9 +210,9 @@ class ModuleInterface:
 
             additional = None
             if query_type is not DownloadTypeEnum.artist:
-                if i.get('audioModes') == ['DOLBY_ATMOS']:
+                if 'DOLBY_ATMOS' in i.get('audioModes'):
                     additional = "Dolby Atmos"
-                elif i.get('audioModes') == ['SONY_360RA']:
+                elif 'SONY_360RA' in i.get('audioModes'):
                     additional = "360 Reality Audio"
                 elif i.get('audioQuality') == 'HI_RES':
                     additional = "MQA"
