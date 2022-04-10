@@ -111,7 +111,6 @@ class TidalApi(object):
         return resp_json
 
     def get_stream_url(self, track_id, quality):
-
         return self._get('tracks/' + str(track_id) + '/playbackinfopostpaywall', {
             'playbackmode': 'STREAM',
             'assetpresentation': 'FULL',
@@ -379,7 +378,7 @@ class TidalMobileSession(TidalSession):
         self.redirect_uri = 'https://tidal.com/android/login/auth'
         self.code_verifier = base64.urlsafe_b64encode(secrets.token_bytes(32)).rstrip(b'=')
         self.code_challenge = base64.urlsafe_b64encode(hashlib.sha256(self.code_verifier).digest()).rstrip(b'=')
-        self.client_unique_key = secrets.token_hex(16)
+        self.client_unique_key = secrets.token_hex(8)
         self.user_agent = 'Mozilla/5.0 (Linux; Android 10; wv) AppleWebKit/537.36''(KHTML, like Gecko)' \
                           'Version/4.0 Chrome/90.0.4430.91 Mobile Safari/537.36'
 
@@ -395,7 +394,7 @@ class TidalMobileSession(TidalSession):
             'client_unique_key': self.client_unique_key,
             'code_challenge': self.code_challenge,
             'code_challenge_method': 'S256',
-            'restrict_signup': True
+            'restrict_signup': 'true'
         }
 
         # retrieve csrf token for subsequent request
@@ -408,19 +407,31 @@ class TidalMobileSession(TidalSession):
         elif r.status_code == 403:
             raise TidalAuthError("Tidal BOT Protection, try again later!")
 
-        recaptcha_response = ''
+        # try Tidal DataDome cookie request
+        r = s.post('https://dd.tidal.com/js/', data={
+            'ddk': '1F633CDD8EF22541BD6D9B1B8EF13A',  # API Key (required)
+            'Referer': r.url,  # Referer authorize link (required)
+            'responsePage': 'origin',  # useless?
+            'ddv': '4.2.15'  # useless?
+        }, headers={
+            'user-agent': self.user_agent,
+            'content-type': 'application/x-www-form-urlencoded'
+        })
+
+        if r.status_code != 200 or not r.json().get('cookie'):
+            raise TidalAuthError("Tidal BOT Protection, could not get DataDome cookie!")
+
+        # get the cookie from the json request and save it in the session
+        dd_cookie = r.json().get('cookie').split(';')[0]
+        s.cookies[dd_cookie.split('=')[0]] = dd_cookie.split('=')[1]
 
         # enter email, verify email is valid
         r = s.post(self.TIDAL_LOGIN_BASE + 'email', params=params, json={
-            'email': username,
-            'recaptchaResponse': recaptcha_response
+            'email': username
         }, verify=False, headers={
             'User-Agent': self.user_agent,
             'x-csrf-token': s.cookies['_csrf-token']
         })
-
-        if r.status_code == 401:
-            raise TidalAuthError('Recaptcha check is missing')
 
         assert (r.status_code == 200)
         if not r.json()['isValidEmail']:
