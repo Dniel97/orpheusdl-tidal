@@ -150,6 +150,9 @@ class ModuleInterface:
         # reset username and password
         username, password = None, None
 
+        # only needed for region locked albums where the track is available but force_album_format is used
+        self.album_cache = {}
+
         # load the Tidal session with all saved sessions (TV, Mobile Atmos, Mobile Default)
         self.session: TidalApi = TidalApi(sessions)
 
@@ -300,28 +303,37 @@ class ModuleInterface:
         if data is None:
             data = {}
 
-        album_data = data[album_id] if album_id in data else self.session.get_album(album_id)
+        if data.get(album_id):
+            album_data = data[album_id]
+        elif self.album_cache.get(album_id):
+            album_data = self.album_cache[album_id]
+        else:
+            album_data = self.session.get_album(album_id)
 
         # get all album tracks with corresponding credits with a limit of 100
         limit = 100
-        tracks_data = self.session.get_album_contributors(album_id, limit=limit)
-        total_tracks = tracks_data.get('totalNumberOfItems')
-
-        # round total_tracks to the next 100 and loop over the offset, that's hideous
-        for offset in range(limit, ((total_tracks // limit) + 1) * limit, limit):
-            # fetch the new album tracks with the given offset
-            track_items = self.session.get_album_contributors(album_id, offset=offset, limit=limit)
-            # append those tracks to the album_data
-            tracks_data['items'] += track_items.get('items')
-
-        # add the track contributors to a new list called 'credits'
         cache = {'data': {}}
-        for track in tracks_data.get('items'):
-            track.get('item').update({'credits': track.get('credits')})
-            cache.get('data')[str(track.get('item').get('id'))] = track.get('item')
+        try:
+            tracks_data = self.session.get_album_contributors(album_id, limit=limit)
+            total_tracks = tracks_data.get('totalNumberOfItems')
 
-        # filter out video clips
-        tracks = [str(track['item']['id']) for track in tracks_data.get('items') if track.get('type') == 'track']
+            # round total_tracks to the next 100 and loop over the offset, that's hideous
+            for offset in range(limit, ((total_tracks // limit) + 1) * limit, limit):
+                # fetch the new album tracks with the given offset
+                track_items = self.session.get_album_contributors(album_id, offset=offset, limit=limit)
+                # append those tracks to the album_data
+                tracks_data['items'] += track_items.get('items')
+
+            # add the track contributors to a new list called 'credits'
+            cache = {'data': {}}
+            for track in tracks_data.get('items'):
+                track.get('item').update({'credits': track.get('credits')})
+                cache.get('data')[str(track.get('item').get('id'))] = track.get('item')
+
+            # filter out video clips
+            tracks = [str(track['item']['id']) for track in tracks_data.get('items') if track.get('type') == 'track']
+        except TidalError:
+            tracks = []
 
         quality = None
         if 'audioModes' in album_data:
@@ -361,17 +373,26 @@ class ModuleInterface:
             album_data = data[album_id] if album_id in data else self.session.get_album(album_id)
         except TidalError as e:
             # if an error occurs, catch it and set the album_data to an empty dict to catch it
-            self.print(f'Tidal: {e} Trying anyway', drop_level=1)
-            album_data = {}
+            self.print(f'Tidal: {e} Trying workaround ...', drop_level=1)
+            album_data = track_data.get('album')
+            album_data.update({
+                'artist': track_data.get('artist'),
+                'numberOfVolumes': 1,
+                'audioQuality': 'LOSSLESS',
+                'audioModes': ['STEREO']
+            })
+
+            # add the region locked album to the cache in order to properly use it later (force_album_format)
+            self.album_cache = {album_id: album_data}
 
         # check if album is only available in LOSSLESS and STEREO, so it switches to the MOBILE_DEFAULT which will
         # get FLACs faster
         if (self.settings['force_non_spatial'] or (
                 (quality_tier is QualityEnum.LOSSLESS or album_data.get('audioQuality') == 'LOSSLESS')
-                and album_data.get('audioModes') == ['STEREO'])) and SessionType.MOBILE_DEFAULT.name in self.available_sessions:
+                and 'STEREO' in album_data.get('audioModes'))) and SessionType.MOBILE_DEFAULT.name in self.available_sessions:
             self.session.default = SessionType.MOBILE_DEFAULT
         elif (track_data.get('audioModes') == ['SONY_360RA']
-              or (track_data.get('audioModes') == ['DOLBY_ATMOS'] and self.settings['prefer_ac4'])) \
+              or ('DOLBY_ATMOS' in track_data.get('audioModes') and self.settings['prefer_ac4'])) \
                 and SessionType.MOBILE_ATMOS.name in self.available_sessions:
             self.session.default = SessionType.MOBILE_ATMOS
         else:
@@ -476,7 +497,7 @@ class ModuleInterface:
             track_info.error = 'Info: Spatial codecs are disabled, if you want to download it, set "spatial_codecs": ' \
                                'true '
 
-        if not stream_data:
+        if error is not None:
             track_info.error = f'Error: {error}'
 
         return track_info
