@@ -312,7 +312,7 @@ class ModuleInterface:
             # fetch the new album tracks with the given offset
             track_items = self.session.get_album_contributors(album_id, offset=offset, limit=limit)
             # append those tracks to the album_data
-            tracks_data['items'] += track_items
+            tracks_data['items'] += track_items['items']
 
         # add the track contributors to a new list called 'credits'
         cache = {'data': {}}
