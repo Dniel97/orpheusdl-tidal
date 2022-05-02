@@ -17,7 +17,7 @@ from .mqa_identifier_python.mqa_identifier import MqaIdentifier
 from .tidal_api import TidalTvSession, TidalApi, TidalMobileSession, SessionType, TidalError, TidalRequestError
 
 module_information = ModuleInformation(
-    service_name='Tidal',
+    service_name='TIDAL',
     module_supported_modes=ModuleModes.download | ModuleModes.credits | ModuleModes.covers | ModuleModes.lyrics,
     login_behaviour=ManualEnum.manual,
     global_settings={
@@ -55,6 +55,7 @@ class ModuleInterface:
 
         # LOW = 96kbit/s AAC, HIGH = 320kbit/s AAC, LOSSLESS = 44.1/16 FLAC, HI_RES <= 48/24 FLAC with MQA
         self.quality_parse = {
+            QualityEnum.MINIMUM: 'LOW',
             QualityEnum.LOW: 'LOW',
             QualityEnum.MEDIUM: 'HIGH',
             QualityEnum.HIGH: 'HIGH',
@@ -92,19 +93,19 @@ class ModuleInterface:
                 sessions[session_type] = TidalMobileSession(self.settings['mobile_default_token'])
 
             if session_type in saved_sessions:
-                logging.debug(f'Tidal: {session_type} session found, loading')
+                logging.debug(f'{module_information.service_name}: {session_type} session found, loading')
 
                 # load the dictionary from the temporary_settings_controller inside the TidalSession class
                 sessions[session_type].set_storage(saved_sessions[session_type])
             else:
-                logging.debug(f'Tidal: No {session_type} session found, creating new one')
+                logging.debug(f'{module_information.service_name}: No {session_type} session found, creating new one')
                 if session_type == SessionType.TV.name:
-                    self.print('Tidal: Creating a TV session')
+                    self.print(f'{module_information.service_name}: Creating a TV session')
                     sessions[session_type].auth()
                 else:
                     if not username or not password:
-                        self.print('Tidal: Creating a Mobile session')
-                        self.print('Tidal: Enter your Tidal username and password:')
+                        self.print(f'{module_information.service_name}: Creating a Mobile session')
+                        self.print(f'{module_information.service_name}: Enter your Tidal username and password:')
                         username = input(' Username: ')
                         password = getpass(' Password: ')
                     sessions[session_type].auth(username, password)
@@ -135,11 +136,11 @@ class ModuleInterface:
 
                 # create a new session finally
                 if session_type == SessionType.TV.name:
-                    self.print('Tidal: Recreating a TV session')
+                    self.print(f'{module_information.service_name}: Recreating a TV session')
                     sessions[session_type].auth()
                 else:
-                    self.print('Tidal: Recreating a Mobile session')
-                    self.print('Tidal: Enter your Tidal username and password:')
+                    self.print(f'{module_information.service_name}: Recreating a Mobile session')
+                    self.print(f'{module_information.service_name}: Enter your Tidal username and password:')
                     username = input('Username: ')
                     password = getpass('Password: ')
                     sessions[session_type].auth(username, password)
@@ -150,13 +151,17 @@ class ModuleInterface:
         # reset username and password
         username, password = None, None
 
+        # only needed for region locked albums where the track is available but force_album_format is used
+        self.album_cache = {}
+
         # load the Tidal session with all saved sessions (TV, Mobile Atmos, Mobile Default)
         self.session: TidalApi = TidalApi(sessions)
 
     def check_subscription(self, subscription: str) -> bool:
         # returns true if "disable_subscription_checks" is enabled or subscription is HIFI Plus
         if not self.disable_subscription_check and subscription not in {'HIFI', 'PREMIUM_PLUS'}:
-            self.print(f'Tidal: Account is not a HiFi Plus account, detected subscription: {subscription}')
+            self.print(f'{module_information.service_name}: Account is not a HiFi Plus account, '
+                       f'detected subscription: {subscription}')
             return False
         return True
 
@@ -188,7 +193,7 @@ class ModuleInterface:
                 if 'name' in i.get('creator'):
                     artists = [i.get('creator').get('name')]
                 elif i.get('type') == 'EDITORIAL':
-                    artists = ['TIDAL']
+                    artists = [module_information.service_name]
                 else:
                     artists = ['Unknown']
 
@@ -241,7 +246,7 @@ class ModuleInterface:
         if 'name' in playlist_data.get('creator'):
             creator_name = playlist_data.get('creator').get('name')
         elif playlist_data.get('type') == 'EDITORIAL':
-            creator_name = 'TIDAL'
+            creator_name = module_information.service_name
         else:
             creator_name = 'Unknown'
 
@@ -249,7 +254,6 @@ class ModuleInterface:
             name=playlist_data.get('title'),
             creator=creator_name,
             tracks=tracks,
-            # TODO: Use playlist creation date or lastUpdated?
             release_year=playlist_data.get('created')[:4],
             creator_id=playlist_data['creator'].get('id'),
             cover_url=self.generate_artwork_url(playlist_data['squareImage'], size=self.cover_size,
@@ -300,28 +304,37 @@ class ModuleInterface:
         if data is None:
             data = {}
 
-        album_data = data[album_id] if album_id in data else self.session.get_album(album_id)
+        if data.get(album_id):
+            album_data = data[album_id]
+        elif self.album_cache.get(album_id):
+            album_data = self.album_cache[album_id]
+        else:
+            album_data = self.session.get_album(album_id)
 
         # get all album tracks with corresponding credits with a limit of 100
         limit = 100
-        tracks_data = self.session.get_album_contributors(album_id, limit=limit)
-        total_tracks = tracks_data.get('totalNumberOfItems')
-
-        # round total_tracks to the next 100 and loop over the offset, that's hideous
-        for offset in range(limit, ((total_tracks // limit) + 1) * limit, limit):
-            # fetch the new album tracks with the given offset
-            track_items = self.session.get_album_contributors(album_id, offset=offset, limit=limit)
-            # append those tracks to the album_data
-            tracks_data['items'] += track_items
-
-        # add the track contributors to a new list called 'credits'
         cache = {'data': {}}
-        for track in tracks_data.get('items'):
-            track.get('item').update({'credits': track.get('credits')})
-            cache.get('data')[str(track.get('item').get('id'))] = track.get('item')
+        try:
+            tracks_data = self.session.get_album_contributors(album_id, limit=limit)
+            total_tracks = tracks_data.get('totalNumberOfItems')
 
-        # filter out video clips
-        tracks = [str(track['item']['id']) for track in tracks_data.get('items') if track.get('type') == 'track']
+            # round total_tracks to the next 100 and loop over the offset, that's hideous
+            for offset in range(limit, ((total_tracks // limit) + 1) * limit, limit):
+                # fetch the new album tracks with the given offset
+                track_items = self.session.get_album_contributors(album_id, offset=offset, limit=limit)
+                # append those tracks to the album_data
+                tracks_data['items'] += track_items.get('items')
+
+            # add the track contributors to a new list called 'credits'
+            cache = {'data': {}}
+            for track in tracks_data.get('items'):
+                track.get('item').update({'credits': track.get('credits')})
+                cache.get('data')[str(track.get('item').get('id'))] = track.get('item')
+
+            # filter out video clips
+            tracks = [str(track['item']['id']) for track in tracks_data.get('items') if track.get('type') == 'track']
+        except TidalError:
+            tracks = []
 
         quality = None
         if 'audioModes' in album_data:
@@ -361,17 +374,26 @@ class ModuleInterface:
             album_data = data[album_id] if album_id in data else self.session.get_album(album_id)
         except TidalError as e:
             # if an error occurs, catch it and set the album_data to an empty dict to catch it
-            self.print(f'Tidal: {e} Trying anyway', drop_level=1)
-            album_data = {}
+            self.print(f'{module_information.service_name}: {e} Trying workaround ...', drop_level=1)
+            album_data = track_data.get('album')
+            album_data.update({
+                'artist': track_data.get('artist'),
+                'numberOfVolumes': 1,
+                'audioQuality': 'LOSSLESS',
+                'audioModes': ['STEREO']
+            })
+
+            # add the region locked album to the cache in order to properly use it later (force_album_format)
+            self.album_cache = {album_id: album_data}
 
         # check if album is only available in LOSSLESS and STEREO, so it switches to the MOBILE_DEFAULT which will
         # get FLACs faster
         if (self.settings['force_non_spatial'] or (
                 (quality_tier is QualityEnum.LOSSLESS or album_data.get('audioQuality') == 'LOSSLESS')
-                and album_data.get('audioModes') == ['STEREO'])) and SessionType.MOBILE_DEFAULT.name in self.available_sessions:
+                and 'STEREO' in album_data.get('audioModes'))) and SessionType.MOBILE_DEFAULT.name in self.available_sessions:
             self.session.default = SessionType.MOBILE_DEFAULT
         elif (track_data.get('audioModes') == ['SONY_360RA']
-              or (track_data.get('audioModes') == ['DOLBY_ATMOS'] and self.settings['prefer_ac4'])) \
+              or ('DOLBY_ATMOS' in track_data.get('audioModes') and self.settings['prefer_ac4'])) \
                 and SessionType.MOBILE_ATMOS.name in self.available_sessions:
             self.session.default = SessionType.MOBILE_ATMOS
         else:
@@ -476,7 +498,7 @@ class ModuleInterface:
             track_info.error = 'Info: Spatial codecs are disabled, if you want to download it, set "spatial_codecs": ' \
                                'true '
 
-        if not stream_data:
+        if error is not None:
             track_info.error = f'Error: {error}'
 
         return track_info

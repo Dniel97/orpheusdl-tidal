@@ -1,9 +1,9 @@
 <!-- PROJECT INTRO -->
 
-OrpheusDL - Tidal
+OrpheusDL - TIDAL
 =================
 
-A Tidal module for the OrpheusDL modular archival music program
+A TIDAL module for the OrpheusDL modular archival music program
 
 [Report Bug](https://github.com/Dniel97/orpheusdl-tidal/issues)
 ·
@@ -12,23 +12,23 @@ A Tidal module for the OrpheusDL modular archival music program
 
 ## Table of content
 
-- [About OrpheusDL - Tidal](#about-orpheusdl-tidal)
+- [About OrpheusDL - TIDAL](#about-orpheusdl---tidal)
 - [Getting Started](#getting-started)
     - [Prerequisites](#prerequisites)
     - [Installation](#installation)
 - [Usage](#usage)
 - [Configuration](#configuration)
     - [Global](#global)
-    - [Tidal](#tidal)
+    - [TIDAL](#tidal)
 - [Contact](#contact)
 - [Acknowledgements](#acknowledgements)
 
 
 
 <!-- ABOUT ORPHEUS -->
-## About OrpheusDL - Tidal
+## About OrpheusDL - TIDAL
 
-OrpheusDL - Tidal is a module written in Python which allows archiving from **Tidal** for the modular music archival program.
+OrpheusDL - TIDAL is a module written in Python which allows archiving from **[tidal.com](https://listen.tidal.com)** for the modular music archival program.
 
 
 <!-- GETTING STARTED -->
@@ -42,15 +42,15 @@ Follow these steps to get a local copy of Orpheus up and running:
 
 ### Installation
 
-1. Clone the repo inside the folder `orpheusdl/modules/`
+1. Go to your `orpheusdl/` directory and run the following command:
    ```sh
-   git clone https://github.com/Dniel97/orpheusdl-tidal.git tidal
+   git clone https://github.com/Dniel97/orpheusdl-tidal.git modules/tidal
    ```
 2. Execute:
    ```sh
    python orpheus.py
    ```
-3. Now the `config/settings.json` file should be updated with the Tidal settings
+3. Now the `config/settings.json` file should be updated with the [TIDAL settings](#tidal)
 
 <!-- USAGE EXAMPLES -->
 ## Usage
@@ -94,8 +94,10 @@ loaded module. You'll find the configuration file here: `config/settings.json`
 `download_quality`: Choose one of the following settings:
 * "hifi": FLAC with MQA up to 48/24
 * "lossless": FLAC with 44.1/16 (is MQA if the album is available in MQA)
-* "high": AAC 320 kbit/s
-* "low": AAC 96 kbit/s
+* "high": same as "medium"
+* "medium": AAC 320 kbit/s
+* "low": same as "minimum"
+* "minimum": AAC 96 kbit/s
 
 `album_format`:
 * `{quality}` will add
@@ -104,12 +106,12 @@ loaded module. You'll find the configuration file here: `config/settings.json`
      [360]
      [M]
     ```
-  depending on the album quality
+  depending on the album quality (with a space in at the first character)
 * `{explicit}` will add
     ```
      [E]
     ```
-  to the album path 
+  to the album path (with a space in at the first character)
 
 `proprietary_codecs`: Enables/Disables MQA (Tidal Masters) downloading regardless the "hifi" setting from `download_quality`
 
@@ -120,7 +122,7 @@ loaded module. You'll find the configuration file here: `config/settings.json`
 the highest is 4000x4000px. That's because Tidal doesn't provide the "origin artwork" size, so the module will just get
 the largest. 
 
-### Tidal
+### TIDAL
 ```json
 {
     "tv_token": "7m7Ap0JC9j1cOM3n",
@@ -133,30 +135,23 @@ the largest.
     "fix_mqa": true
 }
 ```
-`tv_token`: Enter a valid TV client token
 
-`tv_secret`: Enter a valid TV client secret for the `tv_token`
+| Option            | Info                                                                                                                                                                                                                                                                                            |
+|-------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| tv_token          | Enter a valid TV client token                                                                                                                                                                                                                                                                   |
+| tv_secret         | Enter a valid TV client secret for the `tv_token`                                                                                                                                                                                                                                               |
+| mobile_*          | Enter a valid MOBILE client token for the desired session                                                                                                                                                                                                                                       |
+| enable_mobile     | Enables a second MOBILE session which needs a `username` and `password` (can be the same "TV" account) to archive Sony 360RA and Dolby AC-4 if available or allows `force_non_spatial` to work properly                                                                                         |
+| force_non_spatial | Forces a default Mobile session (`mobile_default_token` without support for Dolby Atmos at all, Sony 360RA will still be available) to get FLAC/AAC tracks                                                                                                                                      |
+| prefer_ac4        | If enabled and a mobile session is available (`enable_mobile` is set to `true`) this will ensure to get Dolby AC-4 on Dolby Atmos tracks                                                                                                                                                        |
+| fix_mqa           | If enabled it will download the MQA file before the actual track and analyze the FLAC file to extract the bitDepth and originalSampleRate. The tags `MQAENCODER`, `ENCODER` and `ORIGINALSAMPLERATE` are than added to the FLAC file in order to get properly detected my MQA enabled software. |
 
-`mobile_atmos_token`/`mobile_atmos_token`: Enter a valid MOBILE client token
-
-`enable_mobile`: Enables a second MOBILE session which needs a `username` and `password` (can be the same "TV" account)
-to archive Sony 360RA and Dolby AC-4 if available or allows `force_non_spatial` to work properly
-
-`force_non_spatial`: Forces a default Mobile session (`mobile_default_token` without support for Dolby Atmos at all,
-Sony 360RA will still be available tho) to get FLAC/AAC tracks
-
-`prefer_ac4`: If enabled and a mobile session is available (`enable_mobile` is set to `true`) this will ensure to get
-Dolby AC-4 on Dolby Atmos tracks
-
-`fix_mqa`: If enabled it will download the MQA file before the actual track and analyze the FLAC file to extract the 
-bitDepth and originalSampleRate. The tags `MQAENCODER`, `ENCODER` and `ORIGINALSAMPLERATE` are than added to the FLAC
-file in order to get properly detected.
 
 **Credits: [MQA_identifier](https://github.com/purpl3F0x/MQA_identifier) by
 [@purpl3F0x](https://github.com/purpl3F0x) and [mqaid](https://github.com/redsudo/mqaid) by
 [@redsudo](https://github.com/redsudo).**
 
-**NOTE: `fix_mqa` is enabled which is experimental! May be slower as normal download and could not be working at all**
+**NOTE: `fix_mqa` is experimental! May be slower as a download with `fix_mqa` disabled and could be incorrect**
 
 <!-- Contact -->
 ## Contact
@@ -165,7 +160,7 @@ Yarrm80s (pronounced 'Yeargh mateys!') - [@yarrm80s](https://github.com/yarrm80s
 
 Dniel97 - [@Dniel97](https://github.com/Dniel97)
 
-Project Link: [OrpheusDL Tidal Public GitHub Repository](https://github.com/Dniel97/orpheusdl-tidal)
+Project Link: [OrpheusDL TIDAL Public GitHub Repository](https://github.com/Dniel97/orpheusdl-tidal)
 
 
 <!-- ACKNOWLEDGEMENTS -->
