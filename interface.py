@@ -460,6 +460,12 @@ class ModuleInterface:
                 'HI_RES': None
             }[stream_data['audioQuality']]
 
+            # manually set bitrate for immersive formats
+            if stream_data['audioMode'] == 'DOLBY_ATMOS':
+                bitrate = 768
+            elif stream_data['audioMode'] == 'SONY_360RA':
+                bitrate = 667
+
         # more precise bitrate tidal uses MPEG-DASH
         if audio_track:
             bitrate = audio_track.bitrate // 1000
