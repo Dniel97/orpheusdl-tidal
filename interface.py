@@ -345,9 +345,20 @@ class ModuleInterface:
             elif album_data['audioQuality'] == 'HI_RES':
                 quality = 'M'
 
+        release_year = None
+        if album_data.get('releaseDate'):
+            release_year = album_data.get('releaseDate')[:4]
+        elif album_data.get('streamStartDate'):
+            release_year = album_data.get('streamStartDate')[:4]
+        elif album_data.get('copyright'):
+            # assume that every copyright includes the year
+            release_year = [int(s) for s in album_data.get('copyright').split() if s.isdigit()]
+            if len(release_year) > 0:
+                release_year = release_year[0]
+
         return AlbumInfo(
             name=album_data.get('title'),
-            release_year=album_data.get('releaseDate')[:4],
+            release_year=release_year,
             explicit=album_data.get('explicit'),
             quality=quality,
             upc=album_data.get('upc'),
