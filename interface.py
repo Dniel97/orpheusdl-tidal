@@ -345,9 +345,20 @@ class ModuleInterface:
             elif album_data['audioQuality'] == 'HI_RES':
                 quality = 'M'
 
+        release_year = None
+        if album_data.get('releaseDate'):
+            release_year = album_data.get('releaseDate')[:4]
+        elif album_data.get('streamStartDate'):
+            release_year = album_data.get('streamStartDate')[:4]
+        elif album_data.get('copyright'):
+            # assume that every copyright includes the year
+            release_year = [int(s) for s in album_data.get('copyright').split() if s.isdigit()]
+            if len(release_year) > 0:
+                release_year = release_year[0]
+
         return AlbumInfo(
             name=album_data.get('title'),
-            release_year=album_data.get('releaseDate')[:4],
+            release_year=release_year,
             explicit=album_data.get('explicit'),
             quality=quality,
             upc=album_data.get('upc'),
@@ -448,8 +459,9 @@ class ModuleInterface:
                 # add the file to download_args
                 download_args = {'file_url': manifest['urls'][0]}
 
-        bit_depth = 24 if track_codec in [CodecEnum.EAC3, CodecEnum.MHA1] else 16
-        sample_rate = 48 if track_codec in [CodecEnum.EAC3, CodecEnum.MHA1, CodecEnum.AC4] else 44.1
+        # https://en.wikipedia.org/wiki/Audio_bit_depth#cite_ref-1
+        bit_depth = 16 if track_codec in {CodecEnum.FLAC, CodecEnum.ALAC} else None
+        sample_rate = 48 if track_codec in {CodecEnum.EAC3, CodecEnum.MHA1, CodecEnum.AC4} else 44.1
 
         if stream_data:
             # fallback bitrate
@@ -462,7 +474,11 @@ class ModuleInterface:
 
             # manually set bitrate for immersive formats
             if stream_data['audioMode'] == 'DOLBY_ATMOS':
-                bitrate = 768
+                # check if the Dolby Atmos format is E-AC-3 JOC or AC-4
+                if track_codec == CodecEnum.EAC3:
+                    bitrate = 768
+                elif track_codec == CodecEnum.AC4:
+                    bitrate = 256
             elif stream_data['audioMode'] == 'SONY_360RA':
                 bitrate = 667
 
