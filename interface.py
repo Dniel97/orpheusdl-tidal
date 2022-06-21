@@ -459,8 +459,9 @@ class ModuleInterface:
                 # add the file to download_args
                 download_args = {'file_url': manifest['urls'][0]}
 
-        bit_depth = 24 if track_codec in [CodecEnum.EAC3, CodecEnum.MHA1] else 16
-        sample_rate = 48 if track_codec in [CodecEnum.EAC3, CodecEnum.MHA1, CodecEnum.AC4] else 44.1
+        # https://en.wikipedia.org/wiki/Audio_bit_depth#cite_ref-1
+        bit_depth = 16 if track_codec in {CodecEnum.FLAC, CodecEnum.ALAC} else None
+        sample_rate = 48 if track_codec in {CodecEnum.EAC3, CodecEnum.MHA1, CodecEnum.AC4} else 44.1
 
         if stream_data:
             # fallback bitrate
@@ -473,7 +474,11 @@ class ModuleInterface:
 
             # manually set bitrate for immersive formats
             if stream_data['audioMode'] == 'DOLBY_ATMOS':
-                bitrate = 768
+                # check if the Dolby Atmos format is E-AC-3 JOC or AC-4
+                if track_codec == CodecEnum.EAC3:
+                    bitrate = 768
+                elif track_codec == CodecEnum.AC4:
+                    bitrate = 256
             elif stream_data['audioMode'] == 'SONY_360RA':
                 bitrate = 667
 
