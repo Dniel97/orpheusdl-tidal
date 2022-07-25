@@ -13,7 +13,7 @@ from tqdm import tqdm
 
 from utils.models import *
 from utils.utils import sanitise_name, silentremove, download_to_temp, create_temp_filename, create_requests_session
-from .mqa_identifier_python.mqa_identifier import MqaIdentifier
+from .mqa_identifier_python.mqa_identifier_python.mqa_identifier import MqaIdentifier
 from .tidal_api import TidalTvSession, TidalApi, TidalMobileSession, SessionType, TidalError, TidalRequestError
 
 module_information = ModuleInformation(
@@ -505,6 +505,7 @@ class ModuleInterface:
             bit_depth=bit_depth,
             sample_rate=sample_rate,
             bitrate=bitrate,
+            # duration=track_data.get('duration'),
             cover_url=self.generate_artwork_url(track_data['album'].get('cover'),
                                                 size=self.cover_size) if track_data['album'].get('cover') else None,
             explicit=track_data.get('explicit'),
