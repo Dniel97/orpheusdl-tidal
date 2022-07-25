@@ -44,7 +44,7 @@ Follow these steps to get a local copy of Orpheus up and running:
 
 1. Go to your `orpheusdl/` directory and run the following command:
    ```sh
-   git clone https://github.com/Dniel97/orpheusdl-tidal.git modules/tidal
+   git clone --recurse-submodules https://github.com/Dniel97/orpheusdl-tidal.git modules/tidal
    ```
 2. Execute:
    ```sh
