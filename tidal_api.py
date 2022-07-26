@@ -379,8 +379,8 @@ class TidalMobileSession(TidalSession):
         self.code_verifier = base64.urlsafe_b64encode(secrets.token_bytes(32)).rstrip(b'=')
         self.code_challenge = base64.urlsafe_b64encode(hashlib.sha256(self.code_verifier).digest()).rstrip(b'=')
         self.client_unique_key = secrets.token_hex(8)
-        self.user_agent = 'Mozilla/5.0 (Linux; Android 10; wv) AppleWebKit/537.36''(KHTML, like Gecko)' \
-                          'Version/4.0 Chrome/90.0.4430.91 Mobile Safari/537.36'
+        self.user_agent = 'Mozilla/5.0 (Linux; Android 12; Pixel 6 Build/RKQ1.200826.002; wv) AppleWebKit/537.36 ' \
+                          '(KHTML, like Gecko) Version/4.0 Chrome/103.0.5060.71 Mobile Safari/537.36'
 
     def auth(self, username: str, password: str):
         s = requests.Session()
@@ -398,14 +398,15 @@ class TidalMobileSession(TidalSession):
         }
 
         # retrieve csrf token for subsequent request
-        r = s.get('https://login.tidal.com/authorize', params=params, verify=False, headers={
-            'User-Agent': self.user_agent
+        r = s.get('https://login.tidal.com/authorize', params=params, headers={
+            'User-Agent': self.user_agent,
+            'accept-language': 'en-US'
         })
 
         if r.status_code == 400:
             raise TidalAuthError("Authorization failed! Is the clientid/token up to date?")
         elif r.status_code == 403:
-            raise TidalAuthError("Tidal BOT Protection, try again later!")
+            raise TidalAuthError("TIDAL BOT protection, try again later!")
 
         # try Tidal DataDome cookie request
         r = s.post('https://dd.tidal.com/js/', data={
@@ -419,7 +420,7 @@ class TidalMobileSession(TidalSession):
         })
 
         if r.status_code != 200 or not r.json().get('cookie'):
-            raise TidalAuthError("Tidal BOT Protection, could not get DataDome cookie!")
+            raise TidalAuthError("TIDAL BOT protection, could not get DataDome cookie!")
 
         # get the cookie from the json request and save it in the session
         dd_cookie = r.json().get('cookie').split(';')[0]
@@ -430,7 +431,8 @@ class TidalMobileSession(TidalSession):
             'email': username
         }, verify=False, headers={
             'User-Agent': self.user_agent,
-            'x-csrf-token': s.cookies['_csrf-token']
+            'x-csrf-token': s.cookies['_csrf-token'],
+            'accept-language': 'en-US'
         })
 
         assert (r.status_code == 200)
@@ -445,15 +447,18 @@ class TidalMobileSession(TidalSession):
             'password': password
         }, verify=False, headers={
             'User-Agent': self.user_agent,
-            'x-csrf-token': s.cookies['_csrf-token']
+            'x-csrf-token': s.cookies['_csrf-token'],
+            'accept-language': 'en-US'
         })
 
         assert (r.status_code == 200)
 
         # retrieve access code
-        r = s.get('https://login.tidal.com/success?lang=en', allow_redirects=False, verify=False, headers={
-            'User-Agent': self.user_agent
+        r = s.get('https://login.tidal.com/success?lang=en', allow_redirects=False, headers={
+            'User-Agent': self.user_agent,
+            'accept-language': 'en-US'
         })
+
         if r.status_code == 401:
             raise TidalAuthError('Incorrect password')
         assert (r.status_code == 302)
