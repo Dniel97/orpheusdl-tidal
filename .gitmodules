@@ -1,4 +1,4 @@
 [submodule "mqa_identifier_python"]
 	path = mqa_identifier_python
-	url = git@github.com:Dniel97/MQA-identifier-python.git
+	url = https://github.com/Dniel97/MQA-identifier-python.git
 	branch = master
