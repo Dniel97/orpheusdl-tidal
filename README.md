@@ -111,16 +111,14 @@ loaded module. You'll find the configuration file here: `config/settings.json`
     ```
      [E]
     ```
-  to the album path (with a space in at the first character)
+  to the album path (with a space at the first character)
 
-`proprietary_codecs`: Enables/Disables MQA (Tidal Masters) downloading regardless the "hifi" setting from `download_quality`
 
-`spatial_codecs`: Enables/Disables downloading of Dolby Atmos (EAC-3, AC-4) and Sony 360RA
-
-`main_resolution`: Tidal only supports 80x80, 160x160, 320x320, 480x480, 640x640, 1080x1080 and 1280x1280px
-(1280px won't work for playlists). If you choose 1400 or anything above 1280, it will get the highest quality even if 
-the highest is 4000x4000px. That's because Tidal doesn't provide the "origin artwork" size, so the module will just get
-the largest. 
+| Option             | Info                                                                                                                                                                                                                                                                                                                                                     |
+|--------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| proprietary_codecs | Enables/Disables MQA (Tidal Masters) downloading regardless the "hifi" setting from `download_quality`                                                                                                                                                                                                                                                   |
+| spatial_codecs     | Enables/Disables downloading of Dolby Atmos (EAC-3, AC-4) and Sony 360RA                                                                                                                                                                                                                                                                                 |
+| main_resolution    | Tidal only supports 80x80, 160x160, 320x320, 480x480, 640x640, 1080x1080 and 1280x1280px (1280px won't work for playlists). <br/>If you choose 1400 or anything above 1280, it will get the highest quality even if the highest is 4000x4000px. That's because Tidal doesn't provide the "origin artwork" size, so the module will just get the largest. |
 
 ### TIDAL
 ```json
@@ -136,15 +134,15 @@ the largest.
 }
 ```
 
-| Option            | Info                                                                                                                                                                                                                                                                                            |
-|-------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| tv_token          | Enter a valid TV client token                                                                                                                                                                                                                                                                   |
-| tv_secret         | Enter a valid TV client secret for the `tv_token`                                                                                                                                                                                                                                               |
-| mobile_*          | Enter a valid MOBILE client token for the desired session                                                                                                                                                                                                                                       |
-| enable_mobile     | Enables a second MOBILE session which needs a `username` and `password` (can be the same "TV" account) to archive Sony 360RA and Dolby AC-4 if available or allows `force_non_spatial` to work properly                                                                                         |
-| force_non_spatial | Forces a default Mobile session (`mobile_default_token` without support for Dolby Atmos at all, Sony 360RA will still be available) to get FLAC/AAC tracks                                                                                                                                      |
-| prefer_ac4        | If enabled and a mobile session is available (`enable_mobile` is set to `true`) this will ensure to get Dolby AC-4 on Dolby Atmos tracks                                                                                                                                                        |
-| fix_mqa           | If enabled it will download the MQA file before the actual track and analyze the FLAC file to extract the bitDepth and originalSampleRate. The tags `MQAENCODER`, `ENCODER` and `ORIGINALSAMPLERATE` are than added to the FLAC file in order to get properly detected my MQA enabled software. |
+| Option            | Info                                                                                                                                                                                                                                                                                                                            |
+|-------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| tv_token          | Enter a valid TV client token                                                                                                                                                                                                                                                                                                   |
+| tv_secret         | Enter a valid TV client secret for the `tv_token`                                                                                                                                                                                                                                                                               |
+| mobile_*          | Enter a valid MOBILE client token for the desired session                                                                                                                                                                                                                                                                       |
+| enable_mobile     | Enables a second MOBILE session which needs a `username` and `password` (can be the same "TV" account) to archive Sony 360RA and Dolby AC-4 if available or allows `force_non_spatial` to work properly                                                                                                                         |
+| force_non_spatial | Forces a default Mobile session (`mobile_default_token` without support for Dolby Atmos at all, Sony 360RA will still be available) to get FLAC/AAC tracks                                                                                                                                                                      |
+| prefer_ac4        | If enabled and a mobile session is available (`enable_mobile` is set to `true`) this will ensure to get Dolby AC-4 on Dolby Atmos tracks                                                                                                                                                                                        |
+| fix_mqa           | If enabled it will download the MQA file before the actual track and analyze the FLAC file to extract the bitDepth and originalSampleRate. The tags `MQAENCODER`, `ENCODER` and `ORIGINALSAMPLERATE` are than added to the FLAC file in order to get properly detected by MQA enabled software such as Roon, UAPP or Audirvana. |
 
 
 **Credits: [MQA_identifier](https://github.com/purpl3F0x/MQA_identifier) by
