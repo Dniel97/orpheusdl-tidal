@@ -202,7 +202,7 @@ class ModuleInterface:
             elif query_type is DownloadTypeEnum.track:
                 artists = [j.get('name') for j in i.get('artists')]
                 # Getting the year from the album?
-                year = i.get('album').get('releaseDate')[:4]
+                year = i.get('album').get('releaseDate')[:4] if i.get('album').get('releaseDate') else None
             elif query_type is DownloadTypeEnum.album:
                 artists = [j.get('name') for j in i.get('artists')]
                 year = i.get('releaseDate')[:4]
@@ -500,8 +500,8 @@ class ModuleInterface:
             album_id=album_id,
             artists=[a.get('name') for a in track_data.get('artists')],
             artist_id=track_data['artist'].get('id'),
-            release_year=track_data.get('streamStartDate')[:4] if track_data[
-                'streamStartDate'] else track_data.get('dateAdded')[:4],
+            release_year=track_data.get('streamStartDate')[:4] if track_data.get(
+                'streamStartDate') else track_data.get('dateAdded')[:4] if track_data.get('dateAdded') else None,
             bit_depth=bit_depth,
             sample_rate=sample_rate,
             bitrate=bitrate,
