@@ -505,7 +505,7 @@ class ModuleInterface:
             bit_depth=bit_depth,
             sample_rate=sample_rate,
             bitrate=bitrate,
-            # duration=track_data.get('duration'),
+            duration=track_data.get('duration'),
             cover_url=self.generate_artwork_url(track_data['album'].get('cover'),
                                                 size=self.cover_size) if track_data['album'].get('cover') else None,
             explicit=track_data.get('explicit'),
