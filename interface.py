@@ -398,10 +398,11 @@ class ModuleInterface:
             self.album_cache = {album_id: album_data}
 
         # check if album is only available in LOSSLESS and STEREO, so it switches to the MOBILE_DEFAULT which will
-        # get FLACs faster
+        # get FLACs faster, instead of using MPEG-DASH
+        # TODO: Can the MOBILE_DEFAULT" be deleted?
         if (self.settings['force_non_spatial'] or (
                 (quality_tier is QualityEnum.LOSSLESS or album_data.get('audioQuality') == 'LOSSLESS')
-                and 'STEREO' in album_data.get('audioModes'))) and SessionType.MOBILE_DEFAULT.name in self.available_sessions:
+                and album_data.get('audioModes') == ['STEREO'])) and SessionType.MOBILE_DEFAULT.name in self.available_sessions:
             self.session.default = SessionType.MOBILE_DEFAULT
         elif (track_data.get('audioModes') == ['SONY_360RA']
               or ('DOLBY_ATMOS' in track_data.get('audioModes') and self.settings['prefer_ac4'])) \
