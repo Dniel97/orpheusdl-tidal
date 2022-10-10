@@ -185,6 +185,7 @@ class ModuleInterface:
 
         items = []
         for i in results[query_type.name + 's'].get('items'):
+            duration = None
             if query_type is DownloadTypeEnum.artist:
                 name = i.get('name')
                 artists = None
@@ -197,14 +198,17 @@ class ModuleInterface:
                 else:
                     artists = ['Unknown']
 
+                duration = i.get('duration')
                 # TODO: Use playlist creation date or lastUpdated?
                 year = i.get('created')[:4]
             elif query_type is DownloadTypeEnum.track:
                 artists = [j.get('name') for j in i.get('artists')]
                 # Getting the year from the album?
                 year = i.get('album').get('releaseDate')[:4] if i.get('album').get('releaseDate') else None
+                duration = i.get('duration')
             elif query_type is DownloadTypeEnum.album:
                 artists = [j.get('name') for j in i.get('artists')]
+                duration = i.get('duration')
                 year = i.get('releaseDate')[:4]
             else:
                 raise Exception('Query type is invalid')
@@ -214,7 +218,7 @@ class ModuleInterface:
                 name += f' ({i.get("version")})' if i.get("version") else ''
 
             additional = None
-            if query_type is not DownloadTypeEnum.artist:
+            if query_type not in {DownloadTypeEnum.artist, DownloadTypeEnum.playlist}:
                 if 'DOLBY_ATMOS' in i.get('audioModes'):
                     additional = "Dolby Atmos"
                 elif 'SONY_360RA' in i.get('audioModes'):
@@ -230,6 +234,7 @@ class ModuleInterface:
                 year=year,
                 result_id=str(i.get('id')) if query_type is not DownloadTypeEnum.playlist else i.get('uuid'),
                 explicit=i.get('explicit'),
+                duration=duration,
                 additional=[additional] if additional else None
             )
 
@@ -255,6 +260,7 @@ class ModuleInterface:
             creator=creator_name,
             tracks=tracks,
             release_year=playlist_data.get('created')[:4],
+            duration=playlist_data.get('duration'),
             creator_id=playlist_data['creator'].get('id'),
             cover_url=self.generate_artwork_url(playlist_data['squareImage'], size=self.cover_size,
                                                 max_size=1080) if playlist_data['squareImage'] else None,
@@ -362,6 +368,7 @@ class ModuleInterface:
             explicit=album_data.get('explicit'),
             quality=quality,
             upc=album_data.get('upc'),
+            duration=album_data.get('duration'),
             cover_url=self.generate_artwork_url(album_data.get('cover'),
                                                 size=self.cover_size) if album_data.get('cover') else None,
             animated_cover_url=self.generate_animated_artwork_url(album_data.get('videoCover')) if album_data.get(
@@ -528,7 +535,7 @@ class ModuleInterface:
         return track_info
 
     @staticmethod
-    def download_temp_header(file_url: str, chunk_size: int = 16384) -> str:
+    def download_temp_header(file_url: str, chunk_size: int = 32768) -> str:
         # create flac temp_location
         temp_location = create_temp_filename() + '.flac'
 
