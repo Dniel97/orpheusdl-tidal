@@ -698,7 +698,7 @@ class ModuleInterface:
             # search for title and artist to find a matching track (non Atmos)
             results = self.search(
                 DownloadTypeEnum.track,
-                f'{track_data.get("title")} {"".join(a.get("name") for a in track_data.get("artists"))}',
+                f'{track_data.get("title")} {" ".join(a.get("name") for a in track_data.get("artists"))}',
                 limit=10)
 
             # check every result to find a matching result
