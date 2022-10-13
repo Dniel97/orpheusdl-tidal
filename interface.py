@@ -30,6 +30,7 @@ module_information = ModuleInformation(
         'prefer_ac4': False,
         'fix_mqa': True
     },
+    flags=ModuleFlags.needs_cover_resize,
     session_storage_variables=['sessions'],
     netlocation_constant='tidal',
     test_url='https://tidal.com/browse/track/92265335'
@@ -166,7 +167,7 @@ class ModuleInterface:
         return True
 
     @staticmethod
-    def generate_artwork_url(cover_id: str, size: int, max_size: int = 1280):
+    def _generate_artwork_url(cover_id: str, size: int, max_size: int = 1280):
         # not the best idea, but it rounds the self.cover_size to the nearest number in supported_sizes, 1281 is needed
         # for the "uncompressed" cover
         supported_sizes = [80, 160, 320, 480, 640, 1080, 1280, 1281]
@@ -177,7 +178,7 @@ class ModuleInterface:
         return f'https://resources.tidal.com/images/{cover_id.replace("-", "/")}/{image_name}'
 
     @staticmethod
-    def generate_animated_artwork_url(cover_id: str, size=1280):
+    def _generate_animated_artwork_url(cover_id: str, size=1280):
         return 'https://resources.tidal.com/videos/{0}/{1}x{1}.mp4'.format(cover_id.replace('-', '/'), size)
 
     def search(self, query_type: DownloadTypeEnum, query: str, track_info: TrackInfo = None, limit: int = 20):
@@ -262,8 +263,8 @@ class ModuleInterface:
             release_year=playlist_data.get('created')[:4],
             duration=playlist_data.get('duration'),
             creator_id=playlist_data['creator'].get('id'),
-            cover_url=self.generate_artwork_url(playlist_data['squareImage'], size=self.cover_size,
-                                                max_size=1080) if playlist_data['squareImage'] else None,
+            cover_url=self._generate_artwork_url(playlist_data['squareImage'], size=self.cover_size,
+                                                 max_size=1080) if playlist_data['squareImage'] else None,
             track_extra_kwargs={
                 'data': {track.get('item').get('id'): track.get('item') for track in playlist_tracks.get('items')}
             }
@@ -369,9 +370,9 @@ class ModuleInterface:
             quality=quality,
             upc=album_data.get('upc'),
             duration=album_data.get('duration'),
-            cover_url=self.generate_artwork_url(album_data.get('cover'),
-                                                size=self.cover_size) if album_data.get('cover') else None,
-            animated_cover_url=self.generate_animated_artwork_url(album_data.get('videoCover')) if album_data.get(
+            cover_url=self._generate_artwork_url(album_data.get('cover'),
+                                                 size=self.cover_size) if album_data.get('cover') else None,
+            animated_cover_url=self._generate_animated_artwork_url(album_data.get('videoCover')) if album_data.get(
                 'videoCover') else None,
             artist=album_data.get('artist').get('name'),
             artist_id=album_data.get('artist').get('id'),
@@ -514,8 +515,8 @@ class ModuleInterface:
             sample_rate=sample_rate,
             bitrate=bitrate,
             duration=track_data.get('duration'),
-            cover_url=self.generate_artwork_url(track_data['album'].get('cover'),
-                                                size=self.cover_size) if track_data['album'].get('cover') else None,
+            cover_url=self._generate_artwork_url(track_data['album'].get('cover'),
+                                                 size=self.cover_size) if track_data['album'].get('cover') else None,
             explicit=track_data.get('explicit'),
             tags=self.convert_tags(track_data, album_data, mqa_file),
             codec=track_codec,
@@ -684,7 +685,7 @@ class ModuleInterface:
         cover_id = track_data['album'].get('cover')
 
         # Tidal don't support PNG, so it will always get JPG
-        cover_url = self.generate_artwork_url(cover_id, size=cover_options.resolution)
+        cover_url = self._generate_artwork_url(cover_id, size=cover_options.resolution)
         return CoverInfo(url=cover_url, file_type=ImageFileTypeEnum.jpg)
 
     def get_track_lyrics(self, track_id: str, track_data: dict = None) -> LyricsInfo:
