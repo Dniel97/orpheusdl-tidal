@@ -30,6 +30,7 @@ module_information = ModuleInformation(
         'prefer_ac4': False,
         'fix_mqa': True
     },
+    flags=ModuleFlags.needs_cover_resize,
     session_storage_variables=['sessions'],
     netlocation_constant='tidal',
     test_url='https://tidal.com/browse/track/92265335'
@@ -166,7 +167,7 @@ class ModuleInterface:
         return True
 
     @staticmethod
-    def generate_artwork_url(cover_id: str, size: int, max_size: int = 1280):
+    def _generate_artwork_url(cover_id: str, size: int, max_size: int = 1280):
         # not the best idea, but it rounds the self.cover_size to the nearest number in supported_sizes, 1281 is needed
         # for the "uncompressed" cover
         supported_sizes = [80, 160, 320, 480, 640, 1080, 1280, 1281]
@@ -177,7 +178,7 @@ class ModuleInterface:
         return f'https://resources.tidal.com/images/{cover_id.replace("-", "/")}/{image_name}'
 
     @staticmethod
-    def generate_animated_artwork_url(cover_id: str, size=1280):
+    def _generate_animated_artwork_url(cover_id: str, size=1280):
         return 'https://resources.tidal.com/videos/{0}/{1}x{1}.mp4'.format(cover_id.replace('-', '/'), size)
 
     def search(self, query_type: DownloadTypeEnum, query: str, track_info: TrackInfo = None, limit: int = 20):
@@ -185,6 +186,7 @@ class ModuleInterface:
 
         items = []
         for i in results[query_type.name + 's'].get('items'):
+            duration = None
             if query_type is DownloadTypeEnum.artist:
                 name = i.get('name')
                 artists = None
@@ -197,14 +199,17 @@ class ModuleInterface:
                 else:
                     artists = ['Unknown']
 
+                duration = i.get('duration')
                 # TODO: Use playlist creation date or lastUpdated?
                 year = i.get('created')[:4]
             elif query_type is DownloadTypeEnum.track:
                 artists = [j.get('name') for j in i.get('artists')]
                 # Getting the year from the album?
                 year = i.get('album').get('releaseDate')[:4] if i.get('album').get('releaseDate') else None
+                duration = i.get('duration')
             elif query_type is DownloadTypeEnum.album:
                 artists = [j.get('name') for j in i.get('artists')]
+                duration = i.get('duration')
                 year = i.get('releaseDate')[:4]
             else:
                 raise Exception('Query type is invalid')
@@ -214,7 +219,7 @@ class ModuleInterface:
                 name += f' ({i.get("version")})' if i.get("version") else ''
 
             additional = None
-            if query_type is not DownloadTypeEnum.artist:
+            if query_type not in {DownloadTypeEnum.artist, DownloadTypeEnum.playlist}:
                 if 'DOLBY_ATMOS' in i.get('audioModes'):
                     additional = "Dolby Atmos"
                 elif 'SONY_360RA' in i.get('audioModes'):
@@ -230,6 +235,7 @@ class ModuleInterface:
                 year=year,
                 result_id=str(i.get('id')) if query_type is not DownloadTypeEnum.playlist else i.get('uuid'),
                 explicit=i.get('explicit'),
+                duration=duration,
                 additional=[additional] if additional else None
             )
 
@@ -255,9 +261,10 @@ class ModuleInterface:
             creator=creator_name,
             tracks=tracks,
             release_year=playlist_data.get('created')[:4],
+            duration=playlist_data.get('duration'),
             creator_id=playlist_data['creator'].get('id'),
-            cover_url=self.generate_artwork_url(playlist_data['squareImage'], size=self.cover_size,
-                                                max_size=1080) if playlist_data['squareImage'] else None,
+            cover_url=self._generate_artwork_url(playlist_data['squareImage'], size=self.cover_size,
+                                                 max_size=1080) if playlist_data['squareImage'] else None,
             track_extra_kwargs={
                 'data': {track.get('item').get('id'): track.get('item') for track in playlist_tracks.get('items')}
             }
@@ -362,9 +369,10 @@ class ModuleInterface:
             explicit=album_data.get('explicit'),
             quality=quality,
             upc=album_data.get('upc'),
-            cover_url=self.generate_artwork_url(album_data.get('cover'),
-                                                size=self.cover_size) if album_data.get('cover') else None,
-            animated_cover_url=self.generate_animated_artwork_url(album_data.get('videoCover')) if album_data.get(
+            duration=album_data.get('duration'),
+            cover_url=self._generate_artwork_url(album_data.get('cover'),
+                                                 size=self.cover_size) if album_data.get('cover') else None,
+            animated_cover_url=self._generate_animated_artwork_url(album_data.get('videoCover')) if album_data.get(
                 'videoCover') else None,
             artist=album_data.get('artist').get('name'),
             artist_id=album_data.get('artist').get('id'),
@@ -398,10 +406,11 @@ class ModuleInterface:
             self.album_cache = {album_id: album_data}
 
         # check if album is only available in LOSSLESS and STEREO, so it switches to the MOBILE_DEFAULT which will
-        # get FLACs faster
+        # get FLACs faster, instead of using MPEG-DASH
+        # TODO: Can the MOBILE_DEFAULT" be deleted?
         if (self.settings['force_non_spatial'] or (
                 (quality_tier is QualityEnum.LOSSLESS or album_data.get('audioQuality') == 'LOSSLESS')
-                and 'STEREO' in album_data.get('audioModes'))) and SessionType.MOBILE_DEFAULT.name in self.available_sessions:
+                and album_data.get('audioModes') == ['STEREO'])) and SessionType.MOBILE_DEFAULT.name in self.available_sessions:
             self.session.default = SessionType.MOBILE_DEFAULT
         elif (track_data.get('audioModes') == ['SONY_360RA']
               or ('DOLBY_ATMOS' in track_data.get('audioModes') and self.settings['prefer_ac4'])) \
@@ -506,8 +515,8 @@ class ModuleInterface:
             sample_rate=sample_rate,
             bitrate=bitrate,
             duration=track_data.get('duration'),
-            cover_url=self.generate_artwork_url(track_data['album'].get('cover'),
-                                                size=self.cover_size) if track_data['album'].get('cover') else None,
+            cover_url=self._generate_artwork_url(track_data['album'].get('cover'),
+                                                 size=self.cover_size) if track_data['album'].get('cover') else None,
             explicit=track_data.get('explicit'),
             tags=self.convert_tags(track_data, album_data, mqa_file),
             codec=track_codec,
@@ -527,7 +536,7 @@ class ModuleInterface:
         return track_info
 
     @staticmethod
-    def download_temp_header(file_url: str, chunk_size: int = 16384) -> str:
+    def download_temp_header(file_url: str, chunk_size: int = 32768) -> str:
         # create flac temp_location
         temp_location = create_temp_filename() + '.flac'
 
@@ -676,7 +685,7 @@ class ModuleInterface:
         cover_id = track_data['album'].get('cover')
 
         # Tidal don't support PNG, so it will always get JPG
-        cover_url = self.generate_artwork_url(cover_id, size=cover_options.resolution)
+        cover_url = self._generate_artwork_url(cover_id, size=cover_options.resolution)
         return CoverInfo(url=cover_url, file_type=ImageFileTypeEnum.jpg)
 
     def get_track_lyrics(self, track_id: str, track_data: dict = None) -> LyricsInfo:
@@ -690,7 +699,7 @@ class ModuleInterface:
             # search for title and artist to find a matching track (non Atmos)
             results = self.search(
                 DownloadTypeEnum.track,
-                f'{track_data.get("title")} {"".join(a.get("name") for a in track_data.get("artists"))}',
+                f'{track_data.get("title")} {" ".join(a.get("name") for a in track_data.get("artists"))}',
                 limit=10)
 
             # check every result to find a matching result
