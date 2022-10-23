@@ -716,7 +716,8 @@ class ModuleInterface:
 
         return LyricsInfo(
             embedded=embedded,
-            synced=synced
+            # regex to remove the space after the timestamp "[mm:ss.xx] " to "[mm:ss.xx]"
+            synced=re.sub(r'(\[\d{2}:\d{2}.\d{2,3}])(?: )', r'\1', synced)
         )
 
     def get_track_credits(self, track_id: str, data=None) -> Optional[list]:
