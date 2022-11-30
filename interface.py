@@ -30,7 +30,8 @@ module_information = ModuleInformation(
         'prefer_ac4': False,
         'fix_mqa': True
     },
-    flags=ModuleFlags.needs_cover_resize,
+    # currently too broken to keep it, cover needs to be jpg else crash, problems on termux due to pillow
+    # flags=ModuleFlags.needs_cover_resize,
     session_storage_variables=['sessions'],
     netlocation_constant='tidal',
     test_url='https://tidal.com/browse/track/92265335'
@@ -256,6 +257,14 @@ class ModuleInterface:
         else:
             creator_name = 'Unknown'
 
+        if playlist_data.get('squareImage'):
+            cover_url = self._generate_artwork_url(playlist_data['squareImage'], size=self.cover_size, max_size=1080)
+            cover_type = ImageFileTypeEnum.jpg
+        else:
+            # fallback to defaultPlaylistImage
+            cover_url = 'https://tidal.com/browse/assets/images/defaultImages/defaultPlaylistImage.png'
+            cover_type = ImageFileTypeEnum.png
+
         return PlaylistInfo(
             name=playlist_data.get('title'),
             creator=creator_name,
@@ -263,8 +272,8 @@ class ModuleInterface:
             release_year=playlist_data.get('created')[:4],
             duration=playlist_data.get('duration'),
             creator_id=playlist_data['creator'].get('id'),
-            cover_url=self._generate_artwork_url(playlist_data['squareImage'], size=self.cover_size,
-                                                 max_size=1080) if playlist_data['squareImage'] else None,
+            cover_url=cover_url,
+            cover_type=cover_type,
             track_extra_kwargs={
                 'data': {track.get('item').get('id'): track.get('item') for track in playlist_tracks.get('items')}
             }
@@ -363,6 +372,14 @@ class ModuleInterface:
             if len(release_year) > 0:
                 release_year = release_year[0]
 
+        if album_data.get('cover'):
+            cover_url = self._generate_artwork_url(album_data.get('cover'), size=self.cover_size)
+            cover_type = ImageFileTypeEnum.jpg
+        else:
+            # fallback to defaultAlbumImage
+            cover_url = 'https://tidal.com/browse/assets/images/defaultImages/defaultAlbumImage.png'
+            cover_type = ImageFileTypeEnum.png
+
         return AlbumInfo(
             name=album_data.get('title'),
             release_year=release_year,
@@ -370,8 +387,8 @@ class ModuleInterface:
             quality=quality,
             upc=album_data.get('upc'),
             duration=album_data.get('duration'),
-            cover_url=self._generate_artwork_url(album_data.get('cover'),
-                                                 size=self.cover_size) if album_data.get('cover') else None,
+            cover_url=cover_url,
+            cover_type=cover_type,
             animated_cover_url=self._generate_animated_artwork_url(album_data.get('videoCover')) if album_data.get(
                 'videoCover') else None,
             artist=album_data.get('artist').get('name'),
@@ -503,6 +520,12 @@ class ModuleInterface:
         track_name = track_data.get('title')
         track_name += f' ({track_data.get("version")})' if track_data.get("version") else ''
 
+        if track_data['album'].get('cover'):
+            cover_url = self._generate_artwork_url(track_data['album'].get('cover'), size=self.cover_size)
+        else:
+            # fallback to defaultTrackImage, no cover_type flag? Might crash in the future
+            cover_url = 'https://tidal.com/browse/assets/images/defaultImages/defaultTrackImage.png'
+
         track_info = TrackInfo(
             name=track_name,
             album=album_data.get('title'),
@@ -515,8 +538,7 @@ class ModuleInterface:
             sample_rate=sample_rate,
             bitrate=bitrate,
             duration=track_data.get('duration'),
-            cover_url=self._generate_artwork_url(track_data['album'].get('cover'),
-                                                 size=self.cover_size) if track_data['album'].get('cover') else None,
+            cover_url=cover_url,
             explicit=track_data.get('explicit'),
             tags=self.convert_tags(track_data, album_data, mqa_file),
             codec=track_codec,
@@ -684,9 +706,12 @@ class ModuleInterface:
         track_data = data[track_id] if track_id in data else self.session.get_track(track_id)
         cover_id = track_data['album'].get('cover')
 
-        # Tidal don't support PNG, so it will always get JPG
-        cover_url = self._generate_artwork_url(cover_id, size=cover_options.resolution)
-        return CoverInfo(url=cover_url, file_type=ImageFileTypeEnum.jpg)
+        if cover_id:
+            return CoverInfo(url=self._generate_artwork_url(cover_id, size=cover_options.resolution),
+                             file_type=ImageFileTypeEnum.jpg)
+
+        return CoverInfo(url='https://tidal.com/browse/assets/images/defaultImages/defaultTrackImage.png',
+                         file_type=ImageFileTypeEnum.png)
 
     def get_track_lyrics(self, track_id: str, track_data: dict = None) -> LyricsInfo:
         if not track_data:
@@ -717,7 +742,7 @@ class ModuleInterface:
         return LyricsInfo(
             embedded=embedded,
             # regex to remove the space after the timestamp "[mm:ss.xx] " to "[mm:ss.xx]"
-            synced=re.sub(r'(\[\d{2}:\d{2}.\d{2,3}])(?: )', r'\1', synced)
+            synced=re.sub(r'(\[\d{2}:\d{2}.\d{2,3}])(?: )', r'\1', synced) if synced else None
         )
 
     def get_track_credits(self, track_id: str, data=None) -> Optional[list]:
