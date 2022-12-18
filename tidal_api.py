@@ -332,7 +332,8 @@ class TidalSession(ABC):
 
     def get_subscription(self) -> str:
         if self.access_token:
-            r = requests.get('https://api.tidal.com/v1/users/' + str(self.user_id) + '/subscription',
+            r = requests.get(f'https://api.tidal.com/v1/users/{self.user_id}/subscription',
+                             params={'countryCode': self.country_code},
                              headers=self.auth_headers())
             if r.status_code != 200:
                 raise TidalAuthError(r.json()['userMessage'])

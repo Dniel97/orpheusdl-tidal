@@ -162,7 +162,7 @@ class ModuleInterface:
     def check_subscription(self, subscription: str) -> bool:
         # returns true if "disable_subscription_checks" is enabled or subscription is HIFI Plus
         if not self.disable_subscription_check and subscription not in {'HIFI', 'PREMIUM_PLUS'}:
-            self.print(f'{module_information.service_name}: Account is not a HiFi Plus account, '
+            self.print(f'{module_information.service_name}: Account does not have a HiFi (Plus) subscription, '
                        f'detected subscription: {subscription}')
             return False
         return True
@@ -424,10 +424,10 @@ class ModuleInterface:
 
         # check if album is only available in LOSSLESS and STEREO, so it switches to the MOBILE_DEFAULT which will
         # get FLACs faster, instead of using MPEG-DASH
-        # TODO: Can the MOBILE_DEFAULT" be deleted?
+        # lmao what did I smoke when I wrote this, track_data and not album_data!
         if (self.settings['force_non_spatial'] or (
-                (quality_tier is QualityEnum.LOSSLESS or album_data.get('audioQuality') == 'LOSSLESS')
-                and album_data.get('audioModes') == ['STEREO'])) and SessionType.MOBILE_DEFAULT.name in self.available_sessions:
+                (quality_tier is QualityEnum.LOSSLESS or track_data.get('audioQuality') == 'LOSSLESS')
+                and track_data.get('audioModes') == ['STEREO'])) and SessionType.MOBILE_DEFAULT.name in self.available_sessions:
             self.session.default = SessionType.MOBILE_DEFAULT
         elif (track_data.get('audioModes') == ['SONY_360RA']
               or ('DOLBY_ATMOS' in track_data.get('audioModes') and self.settings['prefer_ac4'])) \
