@@ -379,8 +379,8 @@ class TidalMobileSession(TidalSession):
         self.code_verifier = base64.urlsafe_b64encode(secrets.token_bytes(32)).rstrip(b'=')
         self.code_challenge = base64.urlsafe_b64encode(hashlib.sha256(self.code_verifier).digest()).rstrip(b'=')
         self.client_unique_key = secrets.token_hex(8)
-        self.user_agent = 'Mozilla/5.0 (Linux; Android 12; Pixel 6 Build/RKQ1.200826.002; wv) AppleWebKit/537.36 ' \
-                          '(KHTML, like Gecko) Version/4.0 Chrome/105.0.5195.136 Mobile Safari/537.36'
+        self.user_agent = 'Mozilla/5.0 (Linux; Android 13; Pixel 7 Build/TD1A.221105.001; wv) AppleWebKit/537.36' \
+                          '(KHTML, like Gecko) Version/4.0 Chrome/109.0.5414.80 Mobile Safari/537.36'
 
     def auth(self, username: str, password: str):
         s = requests.Session()
