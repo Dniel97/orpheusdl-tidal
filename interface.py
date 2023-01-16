@@ -107,7 +107,8 @@ class ModuleInterface:
                 else:
                     if not username or not password:
                         self.print(f'{module_information.service_name}: Creating a Mobile session')
-                        self.print(f'{module_information.service_name}: Enter your Tidal username and password:')
+                        self.print(f'{module_information.service_name}: Enter your TIDAL username and password:')
+                        self.print(f'{module_information.service_name}: (password will not be echoed)')
                         username = input(' Username: ')
                         password = getpass(' Password: ')
                     sessions[session_type].auth(username, password)
@@ -142,7 +143,8 @@ class ModuleInterface:
                     sessions[session_type].auth()
                 else:
                     self.print(f'{module_information.service_name}: Recreating a Mobile session')
-                    self.print(f'{module_information.service_name}: Enter your Tidal username and password:')
+                    self.print(f'{module_information.service_name}: Enter your TIDAL username and password:')
+                    self.print(f'{module_information.service_name}: (password will not be echoed)')
                     username = input('Username: ')
                     password = getpass('Password: ')
                     sessions[session_type].auth(username, password)
@@ -187,7 +189,7 @@ class ModuleInterface:
 
         items = []
         for i in results[query_type.name + 's'].get('items'):
-            duration = None
+            duration, name = None, None
             if query_type is DownloadTypeEnum.artist:
                 name = i.get('name')
                 artists = None
@@ -427,7 +429,8 @@ class ModuleInterface:
         # lmao what did I smoke when I wrote this, track_data and not album_data!
         if (self.settings['force_non_spatial'] or (
                 (quality_tier is QualityEnum.LOSSLESS or track_data.get('audioQuality') == 'LOSSLESS')
-                and track_data.get('audioModes') == ['STEREO'])) and SessionType.MOBILE_DEFAULT.name in self.available_sessions:
+                and track_data.get('audioModes') == ['STEREO'])) and (
+                SessionType.MOBILE_DEFAULT.name in self.available_sessions):
             self.session.default = SessionType.MOBILE_DEFAULT
         elif (track_data.get('audioModes') == ['SONY_360RA']
               or ('DOLBY_ATMOS' in track_data.get('audioModes') and self.settings['prefer_ac4'])) \
@@ -683,7 +686,7 @@ class ModuleInterface:
             silentremove(merged_temp_location)
             for temp_location in temp_locations:
                 silentremove(temp_location)
-        except Exception:
+        except:
             self.print('FFmpeg is not installed or working! Using fallback, may have errors')
 
             # return the MP4 temp file, but tell orpheus to change the container to .m4a (AAC)

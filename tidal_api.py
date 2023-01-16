@@ -212,86 +212,30 @@ class TidalApi(object):
     def get_artist_albums_ep_singles(self, artist_id):
         return self._get('artists/' + str(artist_id) + '/albums', params={'filter': 'EPSANDSINGLES'})
 
-    def get_type_from_id(self, id):
+    def get_type_from_id(self, id_):
         result = None
         try:
-            result = self.get_album(id)
+            result = self.get_album(id_)
             return 'a'
         except TidalError:
             pass
         try:
-            result = self.get_artist(id)
+            result = self.get_artist(id_)
             return 'r'
         except TidalError:
             pass
         try:
-            result = self.get_track(id)
+            result = self.get_track(id_)
             return 't'
         except TidalError:
             pass
         try:
-            result = self.get_video(id)
+            result = self.get_video(id_)
             return 'v'
         except TidalError:
             pass
 
         return result
-
-
-class SessionFormats:
-    def __init__(self, session):
-        self.mqa_trackid = '91950969'
-        self.dolby_trackid = '131069353'
-        self.sony_trackid = '142292058'
-
-        self.quality = ['HI_RES', 'LOSSLESS', 'HIGH', 'LOW']
-
-        self.formats = {
-            'eac3': False,
-            'mha1': False,
-            'ac4': False,
-            'mqa': False,
-            'flac': False,
-            'alac': False,
-            'mp4a.40.2': False,
-            'mp4a.40.5': False
-        }
-
-        try:
-            self.check_formats(session)
-        except TidalRequestError:
-            print('\tERROR: No (HiFi) subscription found!')
-
-    def check_formats(self, session):
-        api = TidalApi(session)
-
-        for id in [self.dolby_trackid, self.sony_trackid]:
-            playback_info = api.get_stream_url(id, ['LOW'])
-            if playback_info['manifestMimeType'] == 'application/dash+xml':
-                continue
-            manifest_unparsed = base64.b64decode(playback_info['manifest']).decode('UTF-8')
-            if 'ContentProtection' not in manifest_unparsed:
-                self.formats[json.loads(manifest_unparsed)['codecs']] = True
-
-        for i in range(len(self.quality)):
-            playback_info = api.get_stream_url(self.mqa_trackid, [self.quality[i]])
-            if playback_info['manifestMimeType'] == 'application/dash+xml':
-                continue
-
-            manifest_unparsed = base64.b64decode(playback_info['manifest']).decode('UTF-8')
-            if 'ContentProtection' not in manifest_unparsed:
-                self.formats[json.loads(manifest_unparsed)['codecs']] = True
-
-    def print_fomats(self):
-        table = prettytable.PrettyTable()
-        table.field_names = ['Codec', 'Technical name', 'Supported']
-        table.align = 'l'
-        for format in self.formats:
-            table.add_row([format, technical_names[format], self.formats[format]])
-
-        string_table = '\t' + table.__str__().replace('\n', '\n\t')
-        print(string_table)
-        print('')
 
 
 @dataclass
@@ -379,8 +323,8 @@ class TidalMobileSession(TidalSession):
         self.code_verifier = base64.urlsafe_b64encode(secrets.token_bytes(32)).rstrip(b'=')
         self.code_challenge = base64.urlsafe_b64encode(hashlib.sha256(self.code_verifier).digest()).rstrip(b'=')
         self.client_unique_key = secrets.token_hex(8)
-        self.user_agent = 'Mozilla/5.0 (Linux; Android 12; Pixel 6 Build/RKQ1.200826.002; wv) AppleWebKit/537.36 ' \
-                          '(KHTML, like Gecko) Version/4.0 Chrome/105.0.5195.136 Mobile Safari/537.36'
+        self.user_agent = 'Mozilla/5.0 (Linux; Android 13; Pixel 7 Build/TD1A.221105.001; wv) AppleWebKit/537.36' \
+                          '(KHTML, like Gecko) Version/4.0 Chrome/109.0.5414.80 Mobile Safari/537.36'
 
     def auth(self, username: str, password: str):
         s = requests.Session()
@@ -513,7 +457,7 @@ class TidalMobileSession(TidalSession):
         })
 
         if r.status_code == 200:
-            print('\tRefreshing token successful')
+            # print('TIDAL: Refreshing token successful')
             self.access_token = r.json()['access_token']
             self.expires = datetime.now() + timedelta(seconds=r.json()['expires_in'])
 
@@ -628,7 +572,7 @@ class TidalTvSession(TidalSession):
         })
 
         if r.status_code == 200:
-            print('Tidal: Refreshing token successful')
+            # print('TIDAL: Refreshing token successful')
             self.access_token = r.json()['access_token']
             self.expires = datetime.now() + timedelta(seconds=r.json()['expires_in'])
 
