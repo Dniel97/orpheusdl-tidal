@@ -16,6 +16,7 @@ A TIDAL module for the OrpheusDL modular archival music program
 - [Getting Started](#getting-started)
     - [Prerequisites](#prerequisites)
     - [Installation](#installation)
+    - [Updating](#updating)
 - [Usage](#usage)
 - [Configuration](#configuration)
     - [Global](#global)
@@ -42,7 +43,7 @@ Follow these steps to get a local copy of Orpheus up and running:
 
 ### Installation
 
-1. Go to your `orpheusdl/` directory and run the following command:
+1. Go to your already cloned `orpheusdl/` directory and run the following command:
    ```sh
    git clone --recurse-submodules https://github.com/Dniel97/orpheusdl-tidal.git modules/tidal
    ```
@@ -51,6 +52,19 @@ Follow these steps to get a local copy of Orpheus up and running:
    python orpheus.py
    ```
 3. Now the `config/settings.json` file should be updated with the [TIDAL settings](#tidal)
+
+### Updating
+
+1. Go to your already cloned `orpheusdl/` directory and run the following command:
+   ```sh
+   git -C modules/tidal pull
+   ```
+2. Execute to update your already existing TIDAL settings (if needed):
+   ```sh
+   python orpheus.py
+   ```
+3. Now the `config/settings.json` file should be updated with the new updated [TIDAL settings](#tidal)
+
 
 <!-- USAGE EXAMPLES -->
 ## Usage
