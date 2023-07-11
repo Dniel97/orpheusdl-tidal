@@ -23,7 +23,7 @@ module_information = ModuleInformation(
     global_settings={
         'tv_token': '7m7Ap0JC9j1cOM3n',
         'tv_secret': 'vRAdA108tlvkJpTsGZS8rGZ7xTlbJ0qaZ2K9saEzsgY=',
-        'mobile_atmos_token': 'dN2N95wCyEBTllu4',
+        'mobile_atmos_token': 'km8T1xS355y7dd3H',
         'mobile_default_token': 'WAU9gXp3tHhK4Nns',
         'enable_mobile': True,
         'force_non_spatial': False,
@@ -424,26 +424,52 @@ class ModuleInterface:
             # add the region locked album to the cache in order to properly use it later (force_album_format)
             self.album_cache = {album_id: album_data}
 
-        # check if album is only available in LOSSLESS and STEREO, so it switches to the MOBILE_DEFAULT which will
-        # get FLACs faster, instead of using MPEG-DASH
-        # lmao what did I smoke when I wrote this, track_data and not album_data!
-        if (self.settings['force_non_spatial'] or (
-                (quality_tier is QualityEnum.LOSSLESS or track_data.get('audioQuality') == 'LOSSLESS')
-                and track_data.get('audioModes') == ['STEREO'])) and (
-                SessionType.MOBILE_DEFAULT.name in self.available_sessions):
-            self.session.default = SessionType.MOBILE_DEFAULT
-        elif (track_data.get('audioModes') == ['SONY_360RA']
-              or ('DOLBY_ATMOS' in track_data.get('audioModes') and self.settings['prefer_ac4'])) \
-                and SessionType.MOBILE_ATMOS.name in self.available_sessions:
-            self.session.default = SessionType.MOBILE_ATMOS
+        # MOBILE_DEFAULT is used whenever possible to avoid MPEG-DASH, which slows downloading
+        session = SessionType.MOBILE_DEFAULT
+        hires_flac = False
+        media_tags = track_data['mediaMetadata']['tags']
+
+        if quality_tier is QualityEnum.HIFI:
+            format = None
+
+            if 'HIRES_LOSSLESS' in media_tags:
+                format = 'flac_hires'
+
+            if 'SONY_360RA' in media_tags and not format and not self.settings['force_non_spacial']:
+                format = '360ra'
+
+            if 'DOLBY_ATMOS' in media_tags and not format and not self.settings['force_non_spacial']:
+                if self.settings['prefer_ac4']:
+                    format = 'ac4'
+                else:
+                    format = 'ac3'
+
+            session = {
+                'flac_hires': SessionType.MOBILE_ATMOS,
+                '360ra': SessionType.MOBILE_ATMOS,
+                'ac4': SessionType.MOBILE_ATMOS,
+                'ac3': SessionType.TV,
+                None: SessionType.MOBILE_DEFAULT,
+            }[format]
+
+            if format == 'flac_hires':
+                hires_flac = True
+        elif 'SONY_360RA' in media_tags:
+            # if 360RA is available, we don't use the mobile session here because that will get 360RA
+            # there are no tracks with both 360RA and atmos afaik,
+            # so this shouldn't be an issue for now
+            session = SessionType.TV
+
+        if session.name in self.available_sessions:
+            self.session.default = session
         else:
-            self.session.default = SessionType.TV
+            hires_flac = False
 
         # define all default values in case the stream_data is None (region locked)
         audio_track, mqa_file, track_codec, bitrate, download_args, error = None, None, CodecEnum.FLAC, None, None, None
 
         try:
-            stream_data = self.session.get_stream_url(track_id, self.quality_parse[quality_tier])
+            stream_data = self.session.get_stream_url(track_id, self.quality_parse[quality_tier] if not hires_flac else 'HI_RES_LOSSLESS')
         except TidalRequestError as e:
             error = e
             # definitely region locked
@@ -498,7 +524,8 @@ class ModuleInterface:
                 'LOW': 96,
                 'HIGH': 320,
                 'LOSSLESS': 1411,
-                'HI_RES': None
+                'HI_RES': None,
+                'HI_RES_LOSSLESS': None
             }[stream_data['audioQuality']]
 
             # manually set bitrate for immersive formats
