@@ -228,7 +228,7 @@ class ModuleInterface:
                 elif 'SONY_360RA' in i.get('audioModes'):
                     additional = "360 Reality Audio"
                 elif i.get('audioQuality') == 'HI_RES':
-                    additional = "MQA"
+                    additional = "MAX" if "HIRES_LOSSLESS" in i['mediaMetadata']['tags'] else "MQA"
                 else:
                     additional = 'HiFi'
 
@@ -361,7 +361,7 @@ class ModuleInterface:
             elif album_data['audioModes'] == ['SONY_360RA']:
                 quality = '360'
             elif album_data['audioQuality'] == 'HI_RES':
-                quality = 'M'
+                quality = "MAX" if 'HIRES_LOSSLESS' in album_data['mediaMetadata']['tags'] else "MQA"
 
         release_year = None
         if album_data.get('releaseDate'):
