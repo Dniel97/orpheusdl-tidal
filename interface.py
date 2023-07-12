@@ -424,37 +424,28 @@ class ModuleInterface:
             # add the region locked album to the cache in order to properly use it later (force_album_format)
             self.album_cache = {album_id: album_data}
 
-        # MOBILE_DEFAULT is used whenever possible to avoid MPEG-DASH, which slows downloading
-        session = SessionType.MOBILE_DEFAULT
-        hires_flac = False
         media_tags = track_data['mediaMetadata']['tags']
+        format = None
+        if 'HIRES_LOSSLESS' in media_tags and quality_tier is QualityEnum.HIFI:
+            format = 'flac_hires'
+        if 'SONY_360RA' in media_tags and not format and not self.settings['force_non_spatial']:
+            format = '360ra'
+        if 'DOLBY_ATMOS' in media_tags and not format and not self.settings['force_non_spatial']:
+            if self.settings['prefer_ac4']:
+                format = 'ac4'
+            else:
+                format = 'ac3'
 
-        if quality_tier is QualityEnum.HIFI:
-            format = None
+        session = {
+            'flac_hires': SessionType.MOBILE_ATMOS,
+            '360ra': SessionType.MOBILE_ATMOS,
+            'ac4': SessionType.MOBILE_ATMOS,
+            'ac3': SessionType.TV,
+            # MOBILE_DEFAULT is used whenever possible to avoid MPEG-DASH, which slows downloading
+            None: SessionType.MOBILE_DEFAULT,
+        }[format]
 
-            if 'HIRES_LOSSLESS' in media_tags:
-                format = 'flac_hires'
-
-            if 'SONY_360RA' in media_tags and not format and not self.settings['force_non_spacial']:
-                format = '360ra'
-
-            if 'DOLBY_ATMOS' in media_tags and not format and not self.settings['force_non_spacial']:
-                if self.settings['prefer_ac4']:
-                    format = 'ac4'
-                else:
-                    format = 'ac3'
-
-            session = {
-                'flac_hires': SessionType.MOBILE_ATMOS,
-                '360ra': SessionType.MOBILE_ATMOS,
-                'ac4': SessionType.MOBILE_ATMOS,
-                'ac3': SessionType.TV,
-                None: SessionType.MOBILE_DEFAULT,
-            }[format]
-
-            if format == 'flac_hires':
-                hires_flac = True
-        elif 'SONY_360RA' in media_tags:
+        if not format and 'SONY_360RA' in media_tags:
             # if 360RA is available, we don't use the mobile session here because that will get 360RA
             # there are no tracks with both 360RA and atmos afaik,
             # so this shouldn't be an issue for now
@@ -463,13 +454,13 @@ class ModuleInterface:
         if session.name in self.available_sessions:
             self.session.default = session
         else:
-            hires_flac = False
+            format = None
 
         # define all default values in case the stream_data is None (region locked)
         audio_track, mqa_file, track_codec, bitrate, download_args, error = None, None, CodecEnum.FLAC, None, None, None
 
         try:
-            stream_data = self.session.get_stream_url(track_id, self.quality_parse[quality_tier] if not hires_flac else 'HI_RES_LOSSLESS')
+            stream_data = self.session.get_stream_url(track_id, self.quality_parse[quality_tier] if format != 'flac_hires' else 'HI_RES_LOSSLESS')
         except TidalRequestError as e:
             error = e
             # definitely region locked
