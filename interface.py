@@ -506,7 +506,8 @@ class ModuleInterface:
                 download_args = {'file_url': manifest['urls'][0]}
 
         # https://en.wikipedia.org/wiki/Audio_bit_depth#cite_ref-1
-        bit_depth = 16 if track_codec in {CodecEnum.FLAC, CodecEnum.ALAC} else None
+        bit_depth = (24 if stream_data and stream_data['audioQuality'] == 'HI_RES_LOSSLESS' else 16) \
+            if track_codec in {CodecEnum.FLAC, CodecEnum.ALAC} else None
         sample_rate = 48 if track_codec in {CodecEnum.EAC3, CodecEnum.MHA1, CodecEnum.AC4} else 44.1
 
         if stream_data:
@@ -532,6 +533,8 @@ class ModuleInterface:
         # more precise bitrate tidal uses MPEG-DASH
         if audio_track:
             bitrate = audio_track.bitrate // 1000
+            if stream_data['audioQuality'] == 'HI_RES_LOSSLESS':
+                sample_rate = audio_track.sample_rate / 1000
 
         # now set everything for MQA
         if mqa_file is not None and mqa_file.is_mqa:
