@@ -74,92 +74,120 @@ class ModuleInterface:
         if not saved_sessions:
             saved_sessions = {}
 
-        if self.settings['enable_mobile']:
-            # check all saved session for a session starting with "MOBILE"
-            if not any(session for session in saved_sessions.keys() if session[:6] == 'MOBILE'):
-                confirm = input(' "enable_mobile" is enabled but no MOBILE session was found. Do you want to create a '
-                                'MOBILE session (used for AC-4/360RA) [Y/n]? ')
-                if confirm.upper() == 'N':
-                    self.available_sessions = [SessionType.TV.name]
-        else:
+        if not self.settings['enable_mobile']:
             self.available_sessions = [SessionType.TV.name]
 
-        username, password = None, None
-        for session_type in self.available_sessions:
-            # create all sessions with the needed API keys
-            if session_type == SessionType.TV.name:
-                sessions[session_type] = TidalTvSession(self.settings['tv_token'], self.settings['tv_secret'])
-            elif session_type == SessionType.MOBILE_ATMOS.name:
-                sessions[session_type] = TidalMobileSession(self.settings['mobile_atmos_token'])
-            else:
-                sessions[session_type] = TidalMobileSession(self.settings['mobile_default_token'])
+        while True:
+            login_session = None
 
-            if session_type in saved_sessions:
-                logging.debug(f'{module_information.service_name}: {session_type} session found, loading')
-
-                # load the dictionary from the temporary_settings_controller inside the TidalSession class
-                sessions[session_type].set_storage(saved_sessions[session_type])
-            else:
-                logging.debug(f'{module_information.service_name}: No {session_type} session found, creating new one')
-                if session_type == SessionType.TV.name:
-                    self.print(f'{module_information.service_name}: Creating a TV session')
-                    sessions[session_type].auth()
-                else:
-                    if not username or not password:
-                        self.print(f'{module_information.service_name}: Creating a Mobile session')
-                        self.print(f'{module_information.service_name}: Enter your TIDAL username and password:')
-                        self.print(f'{module_information.service_name}: (password will not be echoed)')
-                        username = input(' Username: ')
-                        password = getpass(' Password: ')
-                    sessions[session_type].auth(username, password)
-                    self.print(f'Successfully logged in, using {session_type} token!')
+            def auth_and_save_session(session, session_type):
+                session = self.auth_session(session, session_type, login_session)
 
                 # get the dict representation from the TidalSession object and save it into saved_session/loginstorage
-                saved_sessions[session_type] = sessions[session_type].get_storage()
+                saved_sessions[session_type] = session.get_storage()
                 module_controller.temporary_settings_controller.set('sessions', saved_sessions)
+                return session
 
-            # always try to refresh session
-            if not sessions[session_type].valid():
-                sessions[session_type].refresh()
-                # Save the refreshed session in the temporary settings
-                saved_sessions[session_type] = sessions[session_type].get_storage()
-                module_controller.temporary_settings_controller.set('sessions', saved_sessions)
+            # ask for login if there are no saved sessions
+            if not saved_sessions:
+                login_session_type = None
+                if len(self.available_sessions) == 1:
+                    login_session_type = self.available_sessions[0]
+                else:
+                    self.print(f'{module_information.service_name}: Choose a login method:')
+                    self.print(f'{module_information.service_name}: 1. TV (browser)')
+                    self.print(f"{module_information.service_name}: 2. Mobile (username and password, choose TV if this doesn't work)")
 
-            while True:
+                    while not login_session_type:
+                        input_str = input(' Login method: ')
+                        try:
+                            login_session_type = {
+                                '1': SessionType.TV.name,
+                                'tv': SessionType.TV.name,
+                                '2': SessionType.MOBILE_DEFAULT.name,
+                                'mobile': SessionType.MOBILE_DEFAULT.name,
+                            }[input_str.lower()]
+                        except KeyError:
+                            self.print(f'{module_information.service_name}: Invalid choice, try again')
+
+                login_session = auth_and_save_session(self.init_session(login_session_type), login_session_type)
+
+            for session_type in self.available_sessions:
+                sessions[session_type] = self.init_session(session_type)
+
+                if session_type in saved_sessions:
+                    logging.debug(f'{module_information.service_name}: {session_type} session found, loading')
+
+                    # load the dictionary from the temporary_settings_controller inside the TidalSession class
+                    sessions[session_type].set_storage(saved_sessions[session_type])
+                else:
+                    logging.debug(f'{module_information.service_name}: No {session_type} session found, creating new one')
+                    sessions[session_type] = auth_and_save_session(sessions[session_type], session_type)
+
+                # always try to refresh session
+                if not sessions[session_type].valid():
+                    sessions[session_type].refresh()
+                    # Save the refreshed session in the temporary settings
+                    saved_sessions[session_type] = sessions[session_type].get_storage()
+                    module_controller.temporary_settings_controller.set('sessions', saved_sessions)
+
                 # check for a valid subscription
                 subscription = self.check_subscription(sessions[session_type].get_subscription())
-                if subscription:
+                if not subscription:
+                    confirm = input(' Do you want to relogin? [Y/n]: ')
+
+                    if confirm.upper() == 'N':
+                        self.print('Exiting...')
+                        exit()
+
+                    # reset saved sessions and loop back to login
+                    saved_sessions = {}
                     break
 
-                confirm = input(' Do you want to create a new session? [Y/n]: ')
+                if not login_session:
+                    login_session = sessions[session_type]
 
-                if confirm.upper() == 'N':
-                    self.print('Exiting...')
-                    exit()
-
-                # create a new session finally
-                if session_type == SessionType.TV.name:
-                    self.print(f'{module_information.service_name}: Recreating a TV session')
-                    sessions[session_type].auth()
-                else:
-                    self.print(f'{module_information.service_name}: Recreating a Mobile session')
-                    self.print(f'{module_information.service_name}: Enter your TIDAL username and password:')
-                    self.print(f'{module_information.service_name}: (password will not be echoed)')
-                    username = input('Username: ')
-                    password = getpass('Password: ')
-                    sessions[session_type].auth(username, password)
-
-                saved_sessions[session_type] = sessions[session_type].get_storage()
-                module_controller.temporary_settings_controller.set('sessions', saved_sessions)
-
-        # reset username and password
-        username, password = None, None
+            if saved_sessions:
+                break
 
         # only needed for region locked albums where the track is available but force_album_format is used
         self.album_cache = {}
 
         # load the Tidal session with all saved sessions (TV, Mobile Atmos, Mobile Default)
         self.session: TidalApi = TidalApi(sessions)
+
+    def init_session(self, session_type):
+        session = None
+        # initialize session with the needed API keys
+        if session_type == SessionType.TV.name:
+            session = TidalTvSession(self.settings['tv_token'], self.settings['tv_secret'])
+        elif session_type == SessionType.MOBILE_ATMOS.name:
+            session = TidalMobileSession(self.settings['mobile_atmos_token'])
+        else:
+            session = TidalMobileSession(self.settings['mobile_default_token'])
+        return session
+
+    def auth_session(self, session, session_type, login_session):
+        if login_session:
+            # refresh tokens can be used with any client id
+            # this can be used to switch to any client type from an existing session
+            session.refresh_token = login_session.refresh_token
+            session.user_id = login_session.user_id
+            session.country_code = login_session.country_code
+            session.refresh()
+        elif session_type == SessionType.TV.name:
+            self.print(f'{module_information.service_name}: Creating a TV session')
+            session.auth()
+        else:
+            self.print(f'{module_information.service_name}: Creating a Mobile session')
+            self.print(f'{module_information.service_name}: Enter your TIDAL username and password:')
+            self.print(f'{module_information.service_name}: (password will not be echoed)')
+            username = input(' Username: ')
+            password = getpass(' Password: ')
+            session.auth(username, password)
+            self.print(f'Successfully logged in, using {session_type} token!')
+
+        return session
 
     def check_subscription(self, subscription: str) -> bool:
         # returns true if "disable_subscription_checks" is enabled or subscription is HIFI Plus
