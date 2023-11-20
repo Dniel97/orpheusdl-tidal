@@ -213,10 +213,13 @@ class ModuleInterface:
         return 'https://resources.tidal.com/videos/{0}/{1}x{1}.mp4'.format(cover_id.replace('-', '/'), size)
 
     def search(self, query_type: DownloadTypeEnum, query: str, track_info: TrackInfo = None, limit: int = 20):
-        results = self.session.get_search_data(query, limit=limit)
+        if track_info and track_info.tags.isrc:
+            results = self.session.get_tracks_by_isrc(track_info.tags.isrc)
+        else:
+            results = self.session.get_search_data(query, limit=limit)[query_type.name + 's']
 
         items = []
-        for i in results[query_type.name + 's'].get('items'):
+        for i in results.get('items'):
             duration, name = None, None
             if query_type is DownloadTypeEnum.artist:
                 name = i.get('name')

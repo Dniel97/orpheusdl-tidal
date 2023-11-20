@@ -174,6 +174,11 @@ class TidalApi(object):
 
     def get_video(self, video_id):
         return self._get('videos/' + str(video_id))
+    
+    def get_tracks_by_isrc(self, isrc):
+        return self._get('tracks', params={
+            'isrc': isrc
+        })
 
     def get_favorite_tracks(self, user_id):
         return self._get('users/' + str(user_id) + '/favorites/tracks')
