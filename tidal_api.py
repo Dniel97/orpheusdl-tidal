@@ -13,7 +13,7 @@ import requests
 import urllib3
 
 import urllib.parse as urlparse
-from urllib.parse import parse_qs
+from urllib.parse import parse_qs, quote
 from datetime import datetime, timedelta
 
 from utils.utils import create_requests_session
@@ -332,7 +332,7 @@ class TidalMobileSession(TidalSession):
         params = {
             'response_type': 'code',
             'redirect_uri': self.redirect_uri,
-            'lang': 'en_US',
+            'lang': 'en',
             'appMode': 'android',
             'client_id': self.client_id,
             'client_unique_key': self.client_unique_key,
@@ -355,10 +355,11 @@ class TidalMobileSession(TidalSession):
 
         # try Tidal DataDome cookie request
         r = s.post('https://dd.tidal.com/js/', data={
+            'jsData': f'{{"opts":"endpoint,ajaxListenerPath","ua":"{self.user_agent}"}}',
             'ddk': '1F633CDD8EF22541BD6D9B1B8EF13A',  # API Key (required)
-            'Referer': r.url,  # Referer authorize link (required)
+            'Referer': quote(r.url),  # Referer authorize link (required)
             'responsePage': 'origin',  # useless?
-            'ddv': '4.4.7'  # useless?
+            'ddv': '4.15.0'  # useless?
         }, headers={
             'user-agent': self.user_agent,
             'content-type': 'application/x-www-form-urlencoded'
@@ -408,7 +409,7 @@ class TidalMobileSession(TidalSession):
             raise TidalAuthError(r.text)
 
         # retrieve access code
-        r = s.get('https://login.tidal.com/success?lang=en', allow_redirects=False, headers={
+        r = s.get('https://login.tidal.com/success', allow_redirects=False, headers={
             'user-agent': self.user_agent,
             'accept-language': 'en-US',
             'x-requested-with': 'com.aspiro.tidal'
