@@ -13,7 +13,7 @@ import requests
 import urllib3
 
 import urllib.parse as urlparse
-from urllib.parse import parse_qs
+from urllib.parse import parse_qs, quote
 from datetime import datetime, timedelta
 
 from utils.utils import create_requests_session
@@ -110,7 +110,7 @@ class TidalApi(object):
         return resp_json
 
     def get_stream_url(self, track_id, quality):
-        return self._get('tracks/' + str(track_id) + '/playbackinfopostpaywall', {
+        return self._get('tracks/' + str(track_id) + '/playbackinfopostpaywall/v4', {
             'playbackmode': 'STREAM',
             'assetpresentation': 'FULL',
             'audioquality': quality,
@@ -174,6 +174,11 @@ class TidalApi(object):
 
     def get_video(self, video_id):
         return self._get('videos/' + str(video_id))
+    
+    def get_tracks_by_isrc(self, isrc):
+        return self._get('tracks', params={
+            'isrc': isrc
+        })
 
     def get_favorite_tracks(self, user_id):
         return self._get('users/' + str(user_id) + '/favorites/tracks')
@@ -323,8 +328,8 @@ class TidalMobileSession(TidalSession):
         self.code_verifier = base64.urlsafe_b64encode(secrets.token_bytes(32)).rstrip(b'=')
         self.code_challenge = base64.urlsafe_b64encode(hashlib.sha256(self.code_verifier).digest()).rstrip(b'=')
         self.client_unique_key = secrets.token_hex(8)
-        self.user_agent = 'Mozilla/5.0 (Linux; Android 13; Pixel 7 Build/TD1A.221105.001; wv) AppleWebKit/537.36' \
-                          '(KHTML, like Gecko) Version/4.0 Chrome/109.0.5414.80 Mobile Safari/537.36'
+        self.user_agent = 'Mozilla/5.0 (Linux; Android 13; Pixel 8 Build/TQ2A.230505.002; wv) AppleWebKit/537.36 ' \
+                          '(KHTML, like Gecko) Version/4.0 Chrome/119.0.6045.163 Mobile Safari/537.36'
 
     def auth(self, username: str, password: str):
         s = requests.Session()
@@ -355,10 +360,11 @@ class TidalMobileSession(TidalSession):
 
         # try Tidal DataDome cookie request
         r = s.post('https://dd.tidal.com/js/', data={
+            'jsData': f'{{"opts":"endpoint,ajaxListenerPath","ua":"{self.user_agent}"}}',
             'ddk': '1F633CDD8EF22541BD6D9B1B8EF13A',  # API Key (required)
-            'Referer': r.url,  # Referer authorize link (required)
+            'Referer': quote(r.url),  # Referer authorize link (required)
             'responsePage': 'origin',  # useless?
-            'ddv': '4.4.7'  # useless?
+            'ddv': '4.17.0'  # useless?
         }, headers={
             'user-agent': self.user_agent,
             'content-type': 'application/x-www-form-urlencoded'
@@ -408,7 +414,7 @@ class TidalMobileSession(TidalSession):
             raise TidalAuthError(r.text)
 
         # retrieve access code
-        r = s.get('https://login.tidal.com/success?lang=en', allow_redirects=False, headers={
+        r = s.get('https://login.tidal.com/success', allow_redirects=False, headers={
             'user-agent': self.user_agent,
             'accept-language': 'en-US',
             'x-requested-with': 'com.aspiro.tidal'
