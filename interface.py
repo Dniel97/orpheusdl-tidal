@@ -21,9 +21,9 @@ module_information = ModuleInformation(
     module_supported_modes=ModuleModes.download | ModuleModes.credits | ModuleModes.covers | ModuleModes.lyrics,
     login_behaviour=ManualEnum.manual,
     global_settings={
-        'tv_token': '7m7Ap0JC9j1cOM3n',
-        'tv_secret': 'vRAdA108tlvkJpTsGZS8rGZ7xTlbJ0qaZ2K9saEzsgY=',
-        'mobile_atmos_token': 'km8T1xS355y7dd3H',
+        'tv_atmos_token': '4N3n6Q1x95LL5K7p',
+        'tv_atmos_secret': 'oKOXfJW371cX6xaZ0PyhgGNBdNLlBZd4AKKYougMjik=',
+        'mobile_atmos_hires_token': 'km8T1xS355y7dd3H',
         'mobile_default_token': 'WAU9gXp3tHhK4Nns',
         'enable_mobile': True,
         'force_non_spatial': False,
@@ -96,7 +96,8 @@ class ModuleInterface:
                 else:
                     self.print(f'{module_information.service_name}: Choose a login method:')
                     self.print(f'{module_information.service_name}: 1. TV (browser)')
-                    self.print(f"{module_information.service_name}: 2. Mobile (username and password, choose TV if this doesn't work)")
+                    self.print(
+                        f"{module_information.service_name}: 2. Mobile (username and password, choose TV if this doesn't work)")
 
                     while not login_session_type:
                         input_str = input(' Login method: ')
@@ -121,7 +122,8 @@ class ModuleInterface:
                     # load the dictionary from the temporary_settings_controller inside the TidalSession class
                     sessions[session_type].set_storage(saved_sessions[session_type])
                 else:
-                    logging.debug(f'{module_information.service_name}: No {session_type} session found, creating new one')
+                    logging.debug(
+                        f'{module_information.service_name}: No {session_type} session found, creating new one')
                     sessions[session_type] = auth_and_save_session(sessions[session_type], session_type)
 
                 # always try to refresh session
@@ -160,9 +162,9 @@ class ModuleInterface:
         session = None
         # initialize session with the needed API keys
         if session_type == SessionType.TV.name:
-            session = TidalTvSession(self.settings['tv_token'], self.settings['tv_secret'])
+            session = TidalTvSession(self.settings['tv_atmos_token'], self.settings['tv_atmos_secret'])
         elif session_type == SessionType.MOBILE_ATMOS.name:
-            session = TidalMobileSession(self.settings['mobile_atmos_token'])
+            session = TidalMobileSession(self.settings['mobile_atmos_hires_token'])
         else:
             session = TidalMobileSession(self.settings['mobile_default_token'])
         return session
@@ -334,7 +336,8 @@ class ModuleInterface:
                 items = []
                 for offset in range(0, total_items // 50 + 1):
                     print(f'Fetching {offset * 50}/{total_items}', end='\r')
-                    items += self.session.get_page(more_items_link, params={'limit': 50, 'offset': offset * 50})['items']
+                    items += self.session.get_page(more_items_link, params={'limit': 50, 'offset': offset * 50})[
+                        'items']
 
                 credit_albums = [item.get('item').get('album') for item in items]
                 self.session.default = SessionType.TV
@@ -491,7 +494,8 @@ class ModuleInterface:
         audio_track, mqa_file, track_codec, bitrate, download_args, error = None, None, CodecEnum.FLAC, None, None, None
 
         try:
-            stream_data = self.session.get_stream_url(track_id, self.quality_parse[quality_tier] if format != 'flac_hires' else 'HI_RES_LOSSLESS')
+            stream_data = self.session.get_stream_url(track_id, self.quality_parse[
+                quality_tier] if format != 'flac_hires' else 'HI_RES_LOSSLESS')
         except TidalRequestError as e:
             error = e
             # definitely region locked
