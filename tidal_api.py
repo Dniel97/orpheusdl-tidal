@@ -328,8 +328,8 @@ class TidalMobileSession(TidalSession):
         self.code_verifier = base64.urlsafe_b64encode(secrets.token_bytes(32)).rstrip(b'=')
         self.code_challenge = base64.urlsafe_b64encode(hashlib.sha256(self.code_verifier).digest()).rstrip(b'=')
         self.client_unique_key = secrets.token_hex(8)
-        self.user_agent = 'Mozilla/5.0 (Linux; Android 13; Pixel 7 Build/TD1A.221105.001; wv) AppleWebKit/537.36' \
-                          '(KHTML, like Gecko) Version/4.0 Chrome/109.0.5414.80 Mobile Safari/537.36'
+        self.user_agent = 'Mozilla/5.0 (Linux; Android 13; Pixel 8 Build/TQ2A.230505.002; wv) AppleWebKit/537.36 ' \
+                          '(KHTML, like Gecko) Version/4.0 Chrome/119.0.6045.163 Mobile Safari/537.36'
 
     def auth(self, username: str, password: str):
         s = requests.Session()
@@ -337,7 +337,7 @@ class TidalMobileSession(TidalSession):
         params = {
             'response_type': 'code',
             'redirect_uri': self.redirect_uri,
-            'lang': 'en',
+            'lang': 'en_US',
             'appMode': 'android',
             'client_id': self.client_id,
             'client_unique_key': self.client_unique_key,
@@ -364,7 +364,7 @@ class TidalMobileSession(TidalSession):
             'ddk': '1F633CDD8EF22541BD6D9B1B8EF13A',  # API Key (required)
             'Referer': quote(r.url),  # Referer authorize link (required)
             'responsePage': 'origin',  # useless?
-            'ddv': '4.15.0'  # useless?
+            'ddv': '4.17.0'  # useless?
         }, headers={
             'user-agent': self.user_agent,
             'content-type': 'application/x-www-form-urlencoded'
