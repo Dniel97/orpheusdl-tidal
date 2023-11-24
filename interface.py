@@ -24,7 +24,7 @@ module_information = ModuleInformation(
         'tv_atmos_token': '4N3n6Q1x95LL5K7p',
         'tv_atmos_secret': 'oKOXfJW371cX6xaZ0PyhgGNBdNLlBZd4AKKYougMjik=',
         'mobile_atmos_hires_token': 'km8T1xS355y7dd3H',
-        'mobile_default_token': 'WAU9gXp3tHhK4Nns',
+        'mobile_hires_token': '6BDSRdpK9hqEBTgU',
         'enable_mobile': True,
         'force_non_spatial': False,
         'prefer_ac4': False,
@@ -166,7 +166,7 @@ class ModuleInterface:
         elif session_type == SessionType.MOBILE_ATMOS.name:
             session = TidalMobileSession(self.settings['mobile_atmos_hires_token'])
         else:
-            session = TidalMobileSession(self.settings['mobile_default_token'])
+            session = TidalMobileSession(self.settings['mobile_hires_token'])
         return session
 
     def auth_session(self, session, session_type, login_session):
