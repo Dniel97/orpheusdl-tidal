@@ -26,7 +26,6 @@ module_information = ModuleInformation(
         'mobile_atmos_hires_token': 'km8T1xS355y7dd3H',
         'mobile_hires_token': '6BDSRdpK9hqEBTgU',
         'enable_mobile': True,
-        'force_non_spatial': False,
         'prefer_ac4': False,
         'fix_mqa': True
     },
@@ -460,15 +459,16 @@ class ModuleInterface:
 
         media_tags = track_data['mediaMetadata']['tags']
         format = None
-        if 'HIRES_LOSSLESS' in media_tags and quality_tier is QualityEnum.HIFI:
+        if codec_options.spatial_codecs:
+            if 'SONY_360RA' in media_tags:
+                format = '360ra'
+            elif 'DOLBY_ATMOS' in media_tags:
+                if self.settings['prefer_ac4']:
+                    format = 'ac4'
+                else:
+                    format = 'ac3'
+        if 'HIRES_LOSSLESS' in media_tags and not format and quality_tier is QualityEnum.HIFI:
             format = 'flac_hires'
-        if 'SONY_360RA' in media_tags and not format and not self.settings['force_non_spatial']:
-            format = '360ra'
-        if 'DOLBY_ATMOS' in media_tags and not format and not self.settings['force_non_spatial']:
-            if self.settings['prefer_ac4']:
-                format = 'ac4'
-            else:
-                format = 'ac3'
 
         session = {
             'flac_hires': SessionType.MOBILE_DEFAULT,
@@ -606,10 +606,6 @@ class ModuleInterface:
             # check if 'credits' are present (only from get_album_data)
             credits_extra_kwargs={'data': {track_id: track_data['credits']} if 'credits' in track_data else {}}
         )
-
-        if not codec_options.spatial_codecs and codec_data[track_codec].spatial:
-            track_info.error = 'Info: Spatial codecs are disabled, if you want to download it, set "spatial_codecs": ' \
-                               'true '
 
         if error is not None:
             track_info.error = f'Error: {error}'
