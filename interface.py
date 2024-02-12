@@ -24,9 +24,8 @@ module_information = ModuleInformation(
         'tv_atmos_token': '4N3n6Q1x95LL5K7p',
         'tv_atmos_secret': 'oKOXfJW371cX6xaZ0PyhgGNBdNLlBZd4AKKYougMjik=',
         'mobile_atmos_hires_token': 'km8T1xS355y7dd3H',
-        'mobile_default_token': 'WAU9gXp3tHhK4Nns',
+        'mobile_hires_token': '6BDSRdpK9hqEBTgU',
         'enable_mobile': True,
-        'force_non_spatial': False,
         'prefer_ac4': False,
         'fix_mqa': True
     },
@@ -166,7 +165,7 @@ class ModuleInterface:
         elif session_type == SessionType.MOBILE_ATMOS.name:
             session = TidalMobileSession(self.settings['mobile_atmos_hires_token'])
         else:
-            session = TidalMobileSession(self.settings['mobile_default_token'])
+            session = TidalMobileSession(self.settings['mobile_hires_token'])
         return session
 
     def auth_session(self, session, session_type, login_session):
@@ -460,30 +459,31 @@ class ModuleInterface:
 
         media_tags = track_data['mediaMetadata']['tags']
         format = None
-        if 'HIRES_LOSSLESS' in media_tags and quality_tier is QualityEnum.HIFI:
+        if codec_options.spatial_codecs:
+            if 'SONY_360RA' in media_tags:
+                format = '360ra'
+            elif 'DOLBY_ATMOS' in media_tags:
+                if self.settings['prefer_ac4']:
+                    format = 'ac4'
+                else:
+                    format = 'ac3'
+        if 'HIRES_LOSSLESS' in media_tags and not format and quality_tier is QualityEnum.HIFI:
             format = 'flac_hires'
-        if 'SONY_360RA' in media_tags and not format and not self.settings['force_non_spatial']:
-            format = '360ra'
-        if 'DOLBY_ATMOS' in media_tags and not format and not self.settings['force_non_spatial']:
-            if self.settings['prefer_ac4']:
-                format = 'ac4'
-            else:
-                format = 'ac3'
 
         session = {
-            'flac_hires': SessionType.MOBILE_ATMOS,
-            '360ra': SessionType.MOBILE_ATMOS,
+            'flac_hires': SessionType.MOBILE_DEFAULT,
+            '360ra': SessionType.MOBILE_DEFAULT,
             'ac4': SessionType.MOBILE_ATMOS,
             'ac3': SessionType.TV,
-            # MOBILE_DEFAULT is used whenever possible to avoid MPEG-DASH, which slows downloading
-            None: SessionType.MOBILE_DEFAULT,
+            # TV is used whenever possible to avoid MPEG-DASH, which slows downloading
+            None: SessionType.TV,
         }[format]
 
-        if not format and 'SONY_360RA' in media_tags:
-            # if 360RA is available, we don't use the mobile session here because that will get 360RA
+        if not format and 'DOLBY_ATMOS' in media_tags:
+            # if atmos is available, we don't use the TV session here because that will get atmos everytime
             # there are no tracks with both 360RA and atmos afaik,
             # so this shouldn't be an issue for now
-            session = SessionType.TV
+            session = SessionType.MOBILE_DEFAULT
 
         if session.name in self.available_sessions:
             self.session.default = session
@@ -606,10 +606,6 @@ class ModuleInterface:
             # check if 'credits' are present (only from get_album_data)
             credits_extra_kwargs={'data': {track_id: track_data['credits']} if 'credits' in track_data else {}}
         )
-
-        if not codec_options.spatial_codecs and codec_data[track_codec].spatial:
-            track_info.error = 'Info: Spatial codecs are disabled, if you want to download it, set "spatial_codecs": ' \
-                               'true '
 
         if error is not None:
             track_info.error = f'Error: {error}'
