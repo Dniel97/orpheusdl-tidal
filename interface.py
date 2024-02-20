@@ -191,8 +191,8 @@ class ModuleInterface:
         return session
 
     def check_subscription(self, subscription: str) -> bool:
-        # returns true if "disable_subscription_checks" is enabled or subscription is HIFI Plus
-        if not self.disable_subscription_check and subscription not in {'HIFI', 'PREMIUM_PLUS'}:
+        # returns true if "disable_subscription_checks" is enabled or subscription is HIFI (Plus)
+        if not self.disable_subscription_check and subscription not in {'HIFI', 'PREMIUM', 'PREMIUM_PLUS'}:
             self.print(f'{module_information.service_name}: Account does not have a HiFi (Plus) subscription, '
                        f'detected subscription: {subscription}')
             return False
