@@ -334,6 +334,25 @@ class TidalMobileSession(TidalSession):
     def auth(self, username: str, password: str):
         s = requests.Session()
 
+        # try Tidal DataDome cookie request
+        r = s.post('https://dd.tidal.com/js/', data={
+            'jsData': f'{{"opts":"endpoint,ajaxListenerPath","ua":"{self.user_agent}"}}',
+            'ddk': '1F633CDD8EF22541BD6D9B1B8EF13A',  # API Key (required)
+            'Referer': "https%3A%2F%2Ftidal.com%2F",  # Referer authorize link (required)
+            'responsePage': 'origin',  # useless?
+            'ddv': '4.17.0'  # useless?
+        }, headers={
+            'user-agent': self.user_agent,
+            'content-type': 'application/x-www-form-urlencoded'
+        })
+
+        if r.status_code != 200 or not r.json().get('cookie'):
+            raise TidalAuthError("TIDAL BOT protection, could not get DataDome cookie!")
+
+        # get the cookie from the json request and save it in the session
+        dd_cookie = r.json().get('cookie').split(';')[0]
+        s.cookies[dd_cookie.split('=')[0]] = dd_cookie.split('=')[1]
+
         params = {
             'response_type': 'code',
             'redirect_uri': self.redirect_uri,
@@ -357,25 +376,6 @@ class TidalMobileSession(TidalSession):
             raise TidalAuthError("Authorization failed! Is the clientid/token up to date?")
         elif r.status_code == 403:
             raise TidalAuthError("TIDAL BOT protection, try again later!")
-
-        # try Tidal DataDome cookie request
-        r = s.post('https://dd.tidal.com/js/', data={
-            'jsData': f'{{"opts":"endpoint,ajaxListenerPath","ua":"{self.user_agent}"}}',
-            'ddk': '1F633CDD8EF22541BD6D9B1B8EF13A',  # API Key (required)
-            'Referer': quote(r.url),  # Referer authorize link (required)
-            'responsePage': 'origin',  # useless?
-            'ddv': '4.17.0'  # useless?
-        }, headers={
-            'user-agent': self.user_agent,
-            'content-type': 'application/x-www-form-urlencoded'
-        })
-
-        if r.status_code != 200 or not r.json().get('cookie'):
-            raise TidalAuthError("TIDAL BOT protection, could not get DataDome cookie!")
-
-        # get the cookie from the json request and save it in the session
-        dd_cookie = r.json().get('cookie').split(';')[0]
-        s.cookies[dd_cookie.split('=')[0]] = dd_cookie.split('=')[1]
 
         # enter email, verify email is valid
         r = s.post(self.TIDAL_LOGIN_BASE + 'email', params=params, json={
