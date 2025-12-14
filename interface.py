@@ -38,8 +38,8 @@ module_information = ModuleInformation(
     | ModuleModes.lyrics,
     login_behaviour=ManualEnum.manual,
     global_settings={
-        "tv_atmos_token": "4N3n6Q1x95LL5K7p",
-        "tv_atmos_secret": "oKOXfJW371cX6xaZ0PyhgGNBdNLlBZd4AKKYougMjik=",
+        "tv_atmos_token": "cgiF7TQuB97BUIu3",
+        "tv_atmos_secret": "1nqpgx8uvBdZigrx4hUPDV2hOwgYAAAG5DYXOr6uNf8=",
         "mobile_atmos_hires_token": "km8T1xS355y7dd3H",
         "mobile_hires_token": "6BDSRdpK9hqEBTgU",
         "enable_mobile": True,
