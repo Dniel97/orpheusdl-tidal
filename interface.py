@@ -8,6 +8,7 @@ from datetime import datetime
 from getpass import getpass
 from dataclasses import dataclass
 from shutil import copyfileobj
+from urllib.parse import urlsplit
 from xml.etree import ElementTree
 from tqdm import tqdm
 
@@ -276,27 +277,24 @@ class ModuleInterface:
         )
 
     def custom_url_parse(self, link: str):
-        # the most beautiful regex ever written
-        match = re.search(
-            r"https?://tidal\.com/(?:browse/)?(?P<media_type>track|album|playlist|artist)/"
-            r"(?P<media_id>[A-Za-z0-9-]+)",
-            link,
+        url = urlsplit(link)
+        # TIDAL can include a title slug before the ID or a track after the album ID.
+        match = re.fullmatch(
+            r"/(?:browse/)?(?P<media_type>track|album|playlist|artist)/"
+            r"(?:[^/]+/)?(?P<media_id>[A-Za-z0-9-]+)(?:/track/[0-9]+)?/?",
+            url.path,
         )
 
-        # so parse the regex "match" to the actual DownloadTypeEnum
-        media_types = {
-            "track": DownloadTypeEnum.track,
-            "album": DownloadTypeEnum.album,
-            "artist": DownloadTypeEnum.artist,
-            "playlist": DownloadTypeEnum.playlist,
-        }
-
-        if not match:
+        if (
+            not match
+            or url.scheme not in {"http", "https"}
+            or url.hostname != "tidal.com"
+        ):
             self.print(f"Unsupported URL: {link}")
             exit()
 
         return MediaIdentification(
-            media_type=media_types[match.group("media_type")],
+            media_type=DownloadTypeEnum[match.group("media_type")],
             media_id=match.group("media_id"),
         )
 
