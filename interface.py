@@ -8,7 +8,6 @@ from datetime import datetime
 from getpass import getpass
 from dataclasses import dataclass
 from shutil import copyfileobj
-from urllib.parse import urlsplit
 from xml.etree import ElementTree
 from tqdm import tqdm
 
@@ -277,19 +276,16 @@ class ModuleInterface:
         )
 
     def custom_url_parse(self, link: str):
-        url = urlsplit(link)
-        # TIDAL can include a title slug before the ID or a track after the album ID.
-        match = re.fullmatch(
-            r"/(?:browse/)?(?P<media_type>track|album|playlist|artist)/"
-            r"(?:[^/]+/)?(?P<media_id>[A-Za-z0-9-]+)(?:/track/[0-9]+)?/?",
-            url.path,
+        # Search so links wrapping a literal TIDAL URL still work.
+        match = re.search(
+            r"https?://(?:listen\.)?tidal\.com/(?:browse/)?"
+            r"(?P<media_type>track|album|playlist|artist)/"
+            r"(?:[^/?#\s]+/)?(?P<media_id>[A-Za-z0-9-]+)"
+            r"(?:/track/[0-9]+)?/?(?=[?#&\s]|$)",
+            link,
         )
 
-        if (
-            not match
-            or url.scheme not in {"http", "https"}
-            or url.hostname != "tidal.com"
-        ):
+        if not match:
             self.print(f"Unsupported URL: {link}")
             exit()
 
