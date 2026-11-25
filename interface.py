@@ -276,27 +276,21 @@ class ModuleInterface:
         )
 
     def custom_url_parse(self, link: str):
-        # the most beautiful regex ever written
+        # Search so links wrapping a literal TIDAL URL still work.
         match = re.search(
-            r"https?://tidal\.com/(?:browse/)?(?P<media_type>track|album|playlist|artist)/"
-            r"(?P<media_id>[A-Za-z0-9-]+)",
+            r"https?://(?:listen\.)?tidal\.com/(?:browse/)?"
+            r"(?P<media_type>track|album|playlist|artist)/"
+            r"(?:[^/?#\s]+/)?(?P<media_id>[A-Za-z0-9-]+)"
+            r"(?:/track/[0-9]+)?/?(?=[?#&\s]|$)",
             link,
         )
-
-        # so parse the regex "match" to the actual DownloadTypeEnum
-        media_types = {
-            "track": DownloadTypeEnum.track,
-            "album": DownloadTypeEnum.album,
-            "artist": DownloadTypeEnum.artist,
-            "playlist": DownloadTypeEnum.playlist,
-        }
 
         if not match:
             self.print(f"Unsupported URL: {link}")
             exit()
 
         return MediaIdentification(
-            media_type=media_types[match.group("media_type")],
+            media_type=DownloadTypeEnum[match.group("media_type")],
             media_id=match.group("media_id"),
         )
 
